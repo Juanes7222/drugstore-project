@@ -80,6 +80,8 @@ export interface PurchaseReceptionConfirmationItem {
   lotId?: string;
   quantity: number;
   unitCost: number;
+  /** The rate the POS used, so the server derives the same line money. */
+  taxRate?: number;
   expirationDate?: string;
   batchNumber?: string;
   /** Optional lot data to create the Lot record if it does not exist yet. */

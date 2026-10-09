@@ -545,6 +545,10 @@ export class PurchaseReceptionsService {
         taxRate: Prisma.Decimal;
         discountAmount: Prisma.Decimal;
         lotId: string | null;
+        taxAmount: Prisma.Decimal;
+        subtotal: Prisma.Decimal;
+        total: Prisma.Decimal;
+        purchaseOrderItemId: string | null;
       }> = [];
 
       if (payload.items && payload.items.length > 0) {
@@ -619,11 +623,38 @@ export class PurchaseReceptionsService {
             });
           }
 
+          // The rate travels on the payload because the POS computed the money
+          // from it. Stamping the server's own default instead made the two
+          // stores disagree on every synced reception: the item row said 19%
+          // while the POS that produced it said 0, and neither total reflected
+          // any tax.
+          const itemTaxRate =
+            item.taxRate !== undefined
+              ? toDecimal(item.taxRate, {
+                  fieldName: `items[${itemsData.length}].taxRate`,
+                })
+              : taxRate;
+          const unitCost = toDecimal(item.unitCost, {
+            fieldName: `items[${itemsData.length}].unitCost`,
+          });
+          const discount = new Prisma.Decimal(0);
+          // Every derived money field is computed here rather than left to the
+          // column default. They used to default to 0, which produced a $0 item
+          // under a $400,000 header — the header was right and the lines were
+          // not, so every item-level report understated the delivery.
+          const lineSubtotal = new Prisma.Decimal(item.quantity)
+            .times(unitCost)
+            .minus(discount);
+          const lineTaxAmount = lineSubtotal.times(itemTaxRate).dividedBy(100);
+
           itemsData.push({
             id: crypto.randomUUID(),
             productId: item.productId,
             receivedQuantity: item.quantity,
-            lotNumber: item.batchNumber || null,
+            // The lot's batch travels inside `lot`, so the item's own
+            // lotNumber has to fall back to it — otherwise the server kept the
+            // batch on the Lot row only and every reception line read blank.
+            lotNumber: item.batchNumber || lotPayload?.batchNumber || null,
             expirationDate: item.expirationDate
               ? new Date(item.expirationDate)
               : null,
@@ -631,13 +662,15 @@ export class PurchaseReceptionsService {
             // missing/non-numeric value surfaces a clear `SYNC_PAYLOAD_VALIDATION`
             // error pointing at `items[N].unitCost` instead of a raw
             // `[DecimalError] Invalid argument: undefined` from decimal.js.
-            realUnitCost: toDecimal(item.unitCost, {
-              fieldName: `items[${itemsData.length}].unitCost`,
-            }),
+            realUnitCost: unitCost,
             taxSchemeId,
-            taxRate,
-            discountAmount: new Prisma.Decimal(0),
+            taxRate: itemTaxRate,
+            discountAmount: discount,
             lotId: resolvedLotId,
+            taxAmount: lineTaxAmount,
+            subtotal: lineSubtotal,
+            total: lineSubtotal.plus(lineTaxAmount),
+            purchaseOrderItemId: null,
           });
         }
       }
@@ -665,6 +698,22 @@ export class PurchaseReceptionsService {
       // Server sequentialNumber is global per subscription, POS local is per-workstation and can collide (see purchase-orders fix)
       const sequentialNumber = await this.getNextSequentialNumber(tx);
 
+      // Resolve and credit the purchase order BEFORE the reception is written, so
+      // each reception row can record which order line it settled.
+      //
+      // Without this the order stayed CONFIRMED indefinitely: the units existed
+      // in stock and in the reception, yet the order that ordered them showed
+      // nothing received, and the reception carried no attribution at all.
+      const orderLineIdByProduct = await this.applyReceptionToPurchaseOrder(
+        tx,
+        payload.purchaseOrderId ?? null,
+        itemsData,
+      );
+      for (const item of itemsData) {
+        item.purchaseOrderItemId =
+          orderLineIdByProduct.get(item.productId) ?? null;
+      }
+
       const reception = await tx.purchaseReception.create({
         data: {
           id: receptionId,
@@ -675,8 +724,17 @@ export class PurchaseReceptionsService {
           purchaseOrderId: payload.purchaseOrderId || null,
           notes,
           subtotal,
-          totalTax: new Prisma.Decimal(0),
-          totalAmount: subtotal,
+          // The tax is the sum of the lines, not a hardcoded zero: the header
+          // used to claim no tax while each item carried a 19% rate, so the two
+          // could never reconcile.
+          totalTax: itemsData.reduce(
+            (sum, item) => sum.plus(item.taxAmount),
+            new Prisma.Decimal(0),
+          ),
+          totalAmount: itemsData.reduce(
+            (sum, item) => sum.plus(item.total),
+            new Prisma.Decimal(0),
+          ),
           createdById: userId,
           receivedAt: new Date(payload.confirmedAt),
           ...(itemsData.length > 0
@@ -693,7 +751,15 @@ export class PurchaseReceptionsService {
                     taxSchemeId: item.taxSchemeId,
                     taxRate: item.taxRate,
                     discountAmount: item.discountAmount,
+                    taxAmount: item.taxAmount,
+                    subtotal: item.subtotal,
+                    total: item.total,
                     ...(item.lotId ? { lotId: item.lotId } : {}),
+                    ...(item.purchaseOrderItemId
+                      ? {
+                          purchaseOrderItemId: item.purchaseOrderItemId,
+                        }
+                      : {}),
                   })),
                 },
               }
@@ -707,12 +773,6 @@ export class PurchaseReceptionsService {
       // when its lines record what arrived. Without this the order stayed
       // CONFIRMED indefinitely: the units existed in stock and in the
       // reception, yet the order that ordered them showed nothing received.
-      await this.applyReceptionToPurchaseOrder(
-        tx,
-        payload.purchaseOrderId ?? null,
-        itemsData,
-      );
-
       return reception;
     });
   }
@@ -729,15 +789,20 @@ export class PurchaseReceptionsService {
    * Lines are matched by `(purchaseOrderId, productId)` rather than by an id
    * carried on the wire: `PurchaseOrderConfirmationItemSchema` has no item id, so
    * the server mints its own `PurchaseOrderItem.id` when it replays the order
-   * confirmation. A POS-side order-item id would therefore never match a server
-   * row. The product id is already remapped to the server's by the caller.
+   * confirmation, and a POS-side id would never match. The resolved server ids
+   * are returned so the reception rows can record the attribution they would
+   * otherwise be missing.
+   *
+   * This runs BEFORE the reception is written, so the caller can stamp
+   * `purchaseOrderItemId` on each item in the same transaction.
    */
   private async applyReceptionToPurchaseOrder(
     tx: Prisma.TransactionClient,
     purchaseOrderId: string | null,
     itemsData: Array<{ productId: string; receivedQuantity: number }>,
-  ): Promise<void> {
-    if (!purchaseOrderId || itemsData.length === 0) return;
+  ): Promise<Map<string, string>> {
+    const orderLineIdByProduct = new Map<string, string>();
+    if (!purchaseOrderId || itemsData.length === 0) return orderLineIdByProduct;
 
     const orderLines = await tx.purchaseOrderItem.findMany({
       where: { purchaseOrderId },
@@ -745,17 +810,17 @@ export class PurchaseReceptionsService {
     });
     // A stub order created earlier in this same replay has no lines yet, so there
     // is nothing to credit and the order's state must stay untouched.
-    if (orderLines.length === 0) return;
+    if (orderLines.length === 0) return orderLineIdByProduct;
 
-    const lineIdByProduct = new Map(
-      orderLines.map((line) => [line.productId, line.id]),
-    );
+    for (const line of orderLines) {
+      orderLineIdByProduct.set(line.productId, line.id);
+    }
 
     // A product can appear on more than one reception line, so units accumulate
     // per order line rather than being applied per reception row.
     const receivedByLineId = new Map<string, number>();
     for (const item of itemsData) {
-      const lineId = lineIdByProduct.get(item.productId);
+      const lineId = orderLineIdByProduct.get(item.productId);
       // A reception for a product this order never ordered credits nothing.
       if (!lineId) continue;
       receivedByLineId.set(
@@ -781,7 +846,7 @@ export class PurchaseReceptionsService {
       });
     }
 
-    if (receivedByLineId.size === 0) return;
+    if (receivedByLineId.size === 0) return orderLineIdByProduct;
 
     const orderItems = await tx.purchaseOrderItem.findMany({
       where: { purchaseOrderId },
@@ -808,6 +873,8 @@ export class PurchaseReceptionsService {
         data: { state: nextState },
       });
     }
+
+    return orderLineIdByProduct;
   }
 
   async annul(id: string, userId: string): Promise<any> {

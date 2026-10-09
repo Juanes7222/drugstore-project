@@ -73,6 +73,10 @@ const PurchaseReceptionConfirmationItemSchema = z.object({
   lotId: idString.optional(),
   quantity: z.number().int().positive(),
   unitCost: z.number().nonnegative(),
+  // The POS computed the line money from this rate, so it has to travel: the
+  // server stamping its own default instead made the two stores disagree on
+  // every synced reception.
+  taxRate: z.number().nonnegative().optional(),
   expirationDate: z.string().optional(),
   batchNumber: z.string().optional(),
   lot: LotSyncDataSchema.optional(),

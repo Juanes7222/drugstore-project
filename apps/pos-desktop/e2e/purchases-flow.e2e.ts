@@ -73,8 +73,12 @@ import {
   fetchLocalLots,
   fetchLocalPurchaseOrders,
   fetchLocalPurchaseReceptions,
+  fetchLocalPurchaseReception,
+  fetchLocalPurchaseReceptionIdByBatch,
+  fetchLocalPurchaseReceptionItems,
   fetchLocalProductCost,
 } from "./local-state";
+import { assertNoDefects, reconcileRow } from "./reconcile";
 
 // `describe` / `it` / `beforeEach` are Mocha globals injected by the WDIO runner.
 /* global describe, it, beforeEach */
@@ -514,6 +518,84 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
       RECEIVED_UNIT_COST,
       "server reception unit cost",
     );
+
+    // ---- Local versus server, field by field, over the UNION of both
+    // projections. This is the check that generalises: it compares everything
+    // both stores hold, so a column the server silently zeroed — or dropped
+    // altogether — shows up here even though no hand-written assertion looks at
+    // it. One run reports every discrepancy rather than the first.
+    const localReceptionId =
+      await fetchLocalPurchaseReceptionIdByBatch(RECEIVED_BATCH);
+    const localReception = localReceptionId
+      ? await fetchLocalPurchaseReception(localReceptionId)
+      : null;
+    if (!localReception || !localReceptionId) {
+      throw new Error(
+        `reception for batch ${RECEIVED_BATCH} is absent from the local mirror`,
+      );
+    }
+    const localItems = await fetchLocalPurchaseReceptionItems(localReceptionId);
+    const serverItem = reception.items[0];
+
+    const headerFindings = reconcileRow(
+      `PurchaseReception #${reception.sequentialNumber}`,
+      localReception,
+      { ...reception, items: undefined } as unknown as Record<string, unknown>,
+      {
+        sequentialNumber: {
+          tolerate: () =>
+            "per-workstation locally, per-subscription server-side",
+        },
+        items: { localOnly: "expanded separately, one row per item" },
+        subtotal: { kind: "money" },
+        totalTax: { kind: "money" },
+        totalAmount: { kind: "money" },
+        receivedAt: { kind: "date" },
+      },
+    );
+
+    const itemFindings = reconcileRow(
+      `PurchaseReceptionItem ${RECEIVED_BATCH}`,
+      localItems[0] ?? {},
+      serverItem as unknown as Record<string, unknown>,
+      {
+        // The server joins the product name for display; the POS has no such
+        // column because it renders from its own product cache.
+        commercialName: { serverOnly: "server joins it for display" },
+        // The local table records the batch as lotNumber; the server keeps
+        // both its own lotNumber and the lot's atchNumber, and both must
+        // carry the batch the cashier typed.
+        batchNumber: { localOnly: "the POS records the batch as lotNumber" },
+        lotId: { tolerate: () => "server adopts the POS lot id on replay" },
+        // Each store mints its own `PurchaseOrderItem.id` when it replays the
+        // order confirmation, so the attribution agrees by ORDER AND PRODUCT
+        // while the identifiers differ. P03 asserts the order really was
+        // credited.
+        purchaseOrderItemId: {
+          tolerate: () =>
+            "each store mints its own order-line id; attribution is by order+product",
+        },
+        // Each store mints its own primary key for the item; the reception id is
+        // shared because the POS originates it.
+        id: { tolerate: () => "each store mints its own primary key" },
+        // An expiry typed as a calendar day is stored as that day's local
+        // midnight, so the two stores disagree on the instant while agreeing on
+        // the date. The day is the assertion that matters.
+        expirationDate: { kind: "dateDay" },
+        realUnitCost: { kind: "money" },
+        taxRate: { kind: "money" },
+        taxAmount: { kind: "money" },
+        subtotal: { kind: "money" },
+        total: { kind: "money" },
+        discountAmount: { kind: "money" },
+      },
+    );
+
+    assertNoDefects(
+      [...headerFindings, ...itemFindings],
+      "purchase reception P03",
+    );
+
     // The expiry the cashier typed is the expiry the lot carries, to the day:
     // a lot that expires on the wrong date is a regulatory problem, not a
     // cosmetic one. The received value is reported because a one-day drift here

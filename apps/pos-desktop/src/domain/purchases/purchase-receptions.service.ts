@@ -927,6 +927,7 @@ export class PurchaseReceptionsService {
         taxRate: true,
         discountAmount: true,
         lotId: true,
+        lotNumber: true,
         expirationDate: true,
       },
     });
@@ -974,6 +975,14 @@ export class PurchaseReceptionsService {
         // and `realUnitCost`; only the sync-payload wire names change.
         quantity: item.receivedQuantity,
         unitCost: Number(item.realUnitCost),
+        // Both of these belong at the item level, not only inside `lot`.
+        //
+        // Without the batch here the server keeps it on the Lot row alone and
+        // every reception line reads blank; without the rate it stamps its own
+        // default instead of the one the line money was computed from, so the
+        // two stores disagree on tax for the same delivery.
+        batchNumber: item.lotNumber ?? undefined,
+        taxRate: Number(item.taxRate),
         // The expiry belongs on the reception ITEM as well as on the lot: the
         // item is the record of what was received and when it expires, and
         // PurchaseReceptionConfirmationItemSchema accepts it. Sending only

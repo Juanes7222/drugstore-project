@@ -150,6 +150,7 @@ export async function fetchServerSale(
     totalTax: string;
     totalAmount: string;
     changeAmount: string;
+    receivedAt: Date | null;
     clientIdentificationNumber: string | null;
     clientName: string | null;
   }>(
@@ -796,6 +797,7 @@ export interface ServerPurchaseReception {
   subtotal: number;
   totalTax: number;
   totalAmount: number;
+  receivedAt: string | null;
   items: Array<{
     productId: string;
     commercialName: string;
@@ -821,9 +823,10 @@ export async function fetchServerPurchaseReceptions(): Promise<
     subtotal: string;
     totalTax: string;
     totalAmount: string;
+    receivedAt: Date | null;
   }>(
     `SELECT id, "sequentialNumber", state, "supplierId", "purchaseOrderId",
-            subtotal, "totalTax", "totalAmount"
+            subtotal, "totalTax", "totalAmount", "receivedAt"
        FROM "PurchaseReception"
       ORDER BY "sequentialNumber" DESC`,
   );
@@ -831,18 +834,29 @@ export async function fetchServerPurchaseReceptions(): Promise<
   const receptions: ServerPurchaseReception[] = [];
   for (const row of rows) {
     const items = await query<{
+      id: string;
+      purchaseReceptionId: string;
       productId: string;
       commercialName: string;
       lotId: string | null;
       batchNumber: string | null;
+      lotNumber: string | null;
+      purchaseOrderItemId: string | null;
       receivedQuantity: string;
       realUnitCost: string;
       taxRate: string;
+      taxAmount: string;
+      discountAmount: string;
+      subtotal: string;
+      total: string;
       expirationDate: Date | null;
     }>(
-      `SELECT pri."productId", p."commercialName", pri."lotId",
-              l."batchNumber", pri."receivedQuantity", pri."realUnitCost",
-              pri."taxRate", pri."expirationDate"
+      `SELECT pri.id, pri."purchaseReceptionId", pri."productId", p."commercialName",
+              pri."lotId", l."batchNumber", pri."lotNumber",
+              pri."purchaseOrderItemId",
+              pri."receivedQuantity", pri."realUnitCost", pri."taxRate",
+              pri."taxAmount", pri."discountAmount", pri.subtotal, pri.total,
+              pri."expirationDate"
          FROM "PurchaseReceptionItem" pri
          JOIN "Product" p ON p.id = pri."productId"
          LEFT JOIN "Lot" l ON l.id = pri."lotId"
@@ -859,14 +873,23 @@ export async function fetchServerPurchaseReceptions(): Promise<
       subtotal: Number(row.subtotal),
       totalTax: Number(row.totalTax),
       totalAmount: Number(row.totalAmount),
+      receivedAt: row.receivedAt ? row.receivedAt.toISOString() : null,
       items: items.map((item) => ({
+        id: item.id,
+        purchaseReceptionId: item.purchaseReceptionId,
         productId: item.productId,
         commercialName: item.commercialName,
         lotId: item.lotId,
         batchNumber: item.batchNumber,
+        lotNumber: item.lotNumber,
+        purchaseOrderItemId: item.purchaseOrderItemId,
         receivedQuantity: Number(item.receivedQuantity),
         realUnitCost: Number(item.realUnitCost),
         taxRate: Number(item.taxRate),
+        taxAmount: Number(item.taxAmount),
+        discountAmount: Number(item.discountAmount),
+        subtotal: Number(item.subtotal),
+        total: Number(item.total),
         expirationDate: item.expirationDate
           ? item.expirationDate.toISOString()
           : null,

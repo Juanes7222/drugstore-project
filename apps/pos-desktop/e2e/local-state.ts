@@ -368,6 +368,60 @@ export interface LocalPurchaseReception {
   itemCount: number;
 }
 
+/** The reception id the POS holds for a given lot batch, or null. */
+export async function fetchLocalPurchaseReceptionIdByBatch(
+  batchNumber: string,
+): Promise<string | null> {
+  const rows = await queryLocal<{ id: string }>(
+    `SELECT DISTINCT ri."purchaseReceptionId" AS id
+       FROM "PurchaseReceptionItem" ri
+      WHERE ri."lotNumber" = $1
+      LIMIT 1`,
+    [batchNumber],
+  );
+  return rows[0]?.id ?? null;
+}
+
+/**
+ * Reception items exactly as the POS holds them, at the same width as the
+ * server's projection.
+ *
+ * The money and tax columns are included on purpose. A previous reader exposed
+ * only counts, which meant no assertion — and no reconciliation — could see that
+ * the server stores $0 on every synced item while the header carries the real
+ * total. Comparing only what a reader happens to select cannot find a dropped
+ * column.
+ */
+export async function fetchLocalPurchaseReceptionItems(
+  receptionId: string,
+): Promise<Record<string, unknown>[]> {
+  return queryLocal<Record<string, unknown>>(
+    `SELECT ri.id, ri."purchaseReceptionId", ri."productId",
+            ri."purchaseOrderItemId", ri."lotId", ri."lotNumber",
+            ri."expirationDate", ri."receivedQuantity", ri."realUnitCost",
+            ri."taxRate", ri."taxAmount", ri."discountAmount", ri.subtotal, ri.total
+       FROM "PurchaseReceptionItem" ri
+      WHERE ri."purchaseReceptionId" = $1
+      ORDER BY ri.id`,
+    [receptionId],
+  );
+}
+
+/** A reception row at the same width as the server's projection. */
+export async function fetchLocalPurchaseReception(
+  receptionId: string,
+): Promise<Record<string, unknown> | null> {
+  const rows = await queryLocal<Record<string, unknown>>(
+    `SELECT pr.id, pr."sequentialNumber", pr.state, pr."supplierId",
+            pr."purchaseOrderId", pr.subtotal, pr."totalTax", pr."totalAmount",
+            pr."receivedAt", pr.notes
+       FROM "PurchaseReception" pr
+      WHERE pr.id = $1`,
+    [receptionId],
+  );
+  return rows[0] ?? null;
+}
+
 /** Purchase receptions the POS holds locally, newest first. */
 export async function fetchLocalPurchaseReceptions(): Promise<
   LocalPurchaseReception[]
