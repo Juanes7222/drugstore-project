@@ -505,6 +505,12 @@ export async function fetchLocalProductCost(
  * from `GET /configuration/pos-settings`. For those controls the store is the
  * database of record, so asserting on it is asserting on the application's real
  * state rather than on a mirror.
+ *
+ * Returns the store's own state, unwrapped from the zustand `persist` envelope.
+ * zustand writes `{ state: {...}, version: N }`, so reading the raw key and
+ * reaching for `config.discountLimits` yields `undefined` for every block —
+ * which fails as a bare `Expected: 7 / Received: undefined` with no hint that
+ * the JSON shape, not the write, was the problem.
  */
 export async function fetchLocalConfig(): Promise<Record<string, unknown>> {
   const raw = await browser.execute(() =>
@@ -516,8 +522,10 @@ export async function fetchLocalConfig(): Promise<Record<string, unknown>> {
         "persisted its configuration block",
     );
   }
+
+  let parsed: Record<string, unknown>;
   try {
-    return JSON.parse(raw) as Record<string, unknown>;
+    parsed = JSON.parse(raw) as Record<string, unknown>;
   } catch (error) {
     throw new Error(
       `pharmacy_local_config is not valid JSON: ${
@@ -525,6 +533,15 @@ export async function fetchLocalConfig(): Promise<Record<string, unknown>> {
       }`,
     );
   }
+
+  const envelope = parsed.state;
+  if (!envelope || typeof envelope !== "object") {
+    throw new Error(
+      "pharmacy_local_config has no `state` object — expected the zustand " +
+        `persist envelope, got keys: ${Object.keys(parsed).join(", ")}`,
+    );
+  }
+  return envelope as Record<string, unknown>;
 }
 
 /**

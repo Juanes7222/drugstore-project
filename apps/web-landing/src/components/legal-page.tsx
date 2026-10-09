@@ -21,7 +21,11 @@ const CONTENT_KEY: Record<LegalDocument, string> = {
   data: "legal.data",
 };
 
-/** Shared layout for the three legal routes. */
+/**
+ * Shared layout for the three legal routes. Rendered inside the site frame, so
+ * these pages keep the header, the footer and the skip link like every other
+ * page on the site.
+ */
 export function LegalPage({ document: doc }: { document: LegalDocument }) {
   const { t } = useTranslation();
   const content = t(CONTENT_KEY[doc], { returnObjects: true }) as LegalContent;

@@ -92,6 +92,9 @@
     "shift_sales": "Ventas del turno",
     "shift_counted": "Contado en caja"
   },
+  "thesis": {
+    "title": "La droguería entera en una sola caja. Vencimientos a la vista, fórmulas que no dependen de la memoria y facturas que llegan a la DIAN sin que usted las mande a mano."
+  },
   "offline": {
     "eyebrow": "Folio 03 · Sin conexión",
     "title": "Se fue internet. La caja sigue abierta.",
@@ -264,6 +267,13 @@
     "legal_data": "Tratamiento de datos personales",
     "disclaimer": "PuntoFarma no reemplaza la asesoría de su contador en las obligaciones tributarias de su negocio."
   },
+  "not_found": {
+    "folio": "Documento no encontrado",
+    "doc_id": "PF·ERR 404",
+    "title": "Esta dirección no corresponde a ningún folio.",
+    "body": "La página que se buscó no existe o se movió de sitio. Vuelva a la portada para seguir con el documento.",
+    "back_home": "Volver a la portada"
+  },
   "checkout": {
     "title": "Comprar licencia",
     "subtitle": "Complete los datos de facturación. El pago se procesa de forma segura por Wompi.",
@@ -277,7 +287,7 @@
     "submit": "Ir a pagar",
     "submitting": "Redirigiendo…",
     "cancel": "Cancelar",
-    "error_api_not_configured": "El servicio de compras no está configurado en este entorno. Escriba a soporte para completar su compra.",
+    "error_api_not_configured": "El servicio de compras no está configurado en este entorno, así que la compra no puede iniciarse desde aquí.",
     "error_network": "No pudimos comunicarnos con el servidor. Revise su conexión e intente de nuevo.",
     "error_invalid": "Revise los campos marcados.",
     "error_generic": "No pudimos iniciar el pago. Intente de nuevo en unos minutos.",
@@ -353,7 +363,7 @@
         {
           "heading": "Derechos y contacto",
           "paragraphs": [
-            "Conforme a la Ley 1581 de 2012 usted puede conocer, actualizar, rectificar y solicitar la supresión de sus datos personales escribiendo a nuestro canal de soporte. Ver la Política de tratamiento de datos personales para el detalle procedimental."
+            "Conforme a la Ley 1581 de 2012 usted puede conocer, actualizar, rectificar y solicitar la supresión de sus datos personales escribiendo por los canales de soporte que llegó a recibir con su código de activación. Ver la Política de tratamiento de datos personales para el detalle procedimental."
           ]
         }
       ]
@@ -384,7 +394,7 @@
         {
           "heading": "Procedimiento de derechos (ACRS)",
           "paragraphs": [
-            "Para ejercer los derechos de acceso, corrección, cancelación y revocación escriba a nuestro canal de soporte indicando su identificación y el dato objeto de la solicitud. Responderemos dentro de los diez (10) días hábiles siguientes. Si la solicitud no es competencia directa de PuntoFarma, informaremos a quién corresponde."
+            "Para ejercer los derechos de acceso, corrección, cancelación y revocación escriba por los canales de soporte que llegó a recibir con su código de activación, indicando su identificación y el dato objeto de la solicitud. Responderemos dentro de los diez (10) días hábiles siguientes. Si la solicitud no es competencia directa de PuntoFarma, informaremos a quién corresponde."
           ]
         }
       ]

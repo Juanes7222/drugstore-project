@@ -90,6 +90,31 @@ const ADMIN: SuiteAccount = {
   displayName: "Administradora Principal",
 };
 
+/**
+ * OWNER, not ADMIN, for the specs that change a sale price.
+ *
+ * A price override is the one thing ADMIN cannot do: `CartLineItem.canOverridePrice`
+ * admits ADMIN and renders the editor, but `resolvePriceOverrideRoleKey` has no
+ * ADMIN branch and returns null, which `validateItemPricing` turns into
+ * `PriceOverrideNotAllowedForRoleException`. So an ADMIN prices a line, watches
+ * the edit accepted, and then has checkout refuse the sale with "No tienes
+ * permiso para modificar el precio de este producto" — the cart screen never
+ * mounts and the spec dies on "Payment total never became visible".
+ *
+ * OWNER is the role the domain actually exempts, and it supersedes ADMIN for
+ * every other check these specs need (`requireRole(CASHIER, ADMIN)` admits it
+ * through the supersession table). The cost floor still applies to OWNER, which
+ * is what P05/P06 are about.
+ *
+ * This is the same UI/domain divergence E2E-S11 pins down from the other side;
+ * see the role-duplication note in `users-flow.e2e.ts`.
+ */
+const OWNER: SuiteAccount = {
+  identifier: "owner@pos-e2e.local",
+  password: "123456",
+  displayName: "Dueña E2E",
+};
+
 const SEEDED_SUPPLIER = {
   identificationNumber: "900123456-1",
   businessName: "POS E2E Supplier",
@@ -720,7 +745,9 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
   });
 
   it("E2E-P06: selling the received lot stamps the new cost and drains the received lot", async () => {
-    await signInAs(ADMIN);
+    // OWNER, not ADMIN: this spec prices the line above the received cost, and
+    // an ADMIN override is refused at checkout. See the OWNER account note.
+    await signInAs(OWNER);
     const baseline = await fetchLatestLocalNumber();
     const seededLotBefore = (await fetchLotStocks())[LOT_IBUPROFENO];
 

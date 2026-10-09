@@ -27,6 +27,10 @@ RUN --mount=type=cache,id=pnpm-web-landing,target=/pnpm/store \
 FROM deps AS build
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
+# Absolute public origin, substituted into og:url / og:image at build time.
+# Must match DOMAIN_LANDING in the nginx template.
+ARG VITE_SITE_URL
+ENV VITE_SITE_URL=$VITE_SITE_URL
 COPY . .
 RUN --mount=type=cache,id=pnpm-web-landing,target=/pnpm/store \
     --mount=type=cache,target=/repo/.turbo,sharing=locked \

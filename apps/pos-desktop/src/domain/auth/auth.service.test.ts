@@ -4,8 +4,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { createAuthService, type AuthService } from "./auth.service";
 import { useLocalSessionStore, type LocalSession } from "./local-session.store";
-import { InvalidCredentialsException, NoActiveSessionException, InsufficientRoleException } from "./exceptions";
+import { InvalidCredentialsException, NoActiveSessionException, InsufficientRoleException, NetworkErrorException } from "./exceptions";
 import type { AuthHttpClient } from "./auth-http-client";
+import { HttpStatusException } from "./auth-http-client";
 import { RoleType } from "@pharmacy/shared-types";
 import { WORKSTATION_NAME } from "../../infrastructure/config";
 
@@ -266,16 +267,40 @@ describe("AuthService", () => {
       expect(stored?.accessToken).toBe("new-access-token");
     });
 
-    it("clears the session when the refresh fails", async () => {
+    it("clears the session when the server rejects the token", async () => {
       useLocalSessionStore.getState().setSession(makeLocalSession());
 
-      vi.mocked(http.postWithAuth).mockRejectedValue(new Error("Token expired"));
+      vi.mocked(http.postWithAuth).mockRejectedValue(
+        new HttpStatusException(401, { message: "Token expired" }),
+      );
 
       const result = await auth.refreshSession();
 
       expect(result).toBeNull();
       const stored = useLocalSessionStore.getState().session;
       expect(stored).toBeNull();
+    });
+
+    // Regression guard for a bug this suite surfaced in the field: a transient
+    // refresh failure logged the cashier out mid-sale. `AuthRedirect` turns a
+    // null session into a navigation to the login screen, so treating a network
+    // blip as a logout ejected the user from a live sale. Only an explicit 401/403
+    // may end the session now.
+    it("keeps the session when the refresh fails for a non-credential reason", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+
+      for (const failure of [
+        new NetworkErrorException("connection reset"),
+        new HttpStatusException(500, null),
+        new HttpStatusException(503, null),
+      ]) {
+        vi.mocked(http.postWithAuth).mockRejectedValue(failure);
+
+        const result = await auth.refreshSession();
+
+        expect(result).toBeNull();
+        expect(useLocalSessionStore.getState().session).not.toBeNull();
+      }
     });
   });
 

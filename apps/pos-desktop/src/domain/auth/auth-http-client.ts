@@ -24,11 +24,18 @@ export interface AuthHttpClient {
  * caller can map it to a domain exception.
  */
 export class HttpStatusException extends Error {
+  /**
+   * @param message Overrides the default `HTTP <status>`. The `*WithAuth`
+   *   helpers pass their historical `[<status>] <serverMessage>` text so
+   *   callers that assert on the message keep working while still getting the
+   *   structured status they need to tell a rejection from a transport fault.
+   */
   constructor(
     public readonly status: number,
     public readonly body: unknown,
+    message: string = `HTTP ${status}`,
   ) {
-    super(`HTTP ${status}`);
+    super(message);
     this.name = 'HttpStatusException';
   }
 }
@@ -108,7 +115,13 @@ export function createAuthHttpClient(baseUrl: string): AuthHttpClient {
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));
         const serverMessage = (errorBody as any).message;
-        throw new Error(
+        // Typed, and with the historical message text preserved: callers that
+        // branch on the status (see `refreshSession`, which must distinguish a
+        // rejected token from an unreachable server) get a signal, and callers
+        // that only surface the message are unaffected.
+        throw new HttpStatusException(
+          response.status,
+          errorBody,
           serverMessage
             ? `[${response.status}] ${serverMessage}`
             : `[${response.status}] ${response.statusText}`,

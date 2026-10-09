@@ -112,6 +112,10 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* No single word is left alone on a last line. Headings get `balance` from
+     * `.display`; body copy gets `pretty`, which is the other half of the same
+     * promise — it trades a little ragging for never orphaning a word. */
+    text-wrap: pretty;
     /* Browser furniture nobody drew still has to belong to the palette: the
      * caret, the selection bar and the scrollbar track all shipped green-on-
      * paper-stock before this. */
@@ -219,6 +223,15 @@
     font-size: 0.875rem;
   }
 
+  /* Press feedback. A control that only answers on hover leaves a finger with
+   * no acknowledgement at all, and the whole page is built for a touchscreen
+   * terminal. Scaled rather than translated: these sit inside printed
+   * documents and a nudge would break their edges, a press would not. */
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
+    transition-duration: 80ms;
+  }
+
   /* The checkout dialog's submit button holds this state while the browser
    * navigates to Wompi; without it the label is the only signal that anything
    * is happening. */
@@ -297,6 +310,10 @@
     .link-rule:hover::after {
       transform: scaleX(1);
     }
+  }
+
+  .link-rule:active {
+    transform: translateY(1px);
   }
 }
 
@@ -654,29 +671,34 @@
  * ------------------------------------------------------------------------- */
 
 /* Hero entrance — a short stagger on first paint only. The hero is above the
- * fold by definition, so this one is a timer and not a scroll timeline. */
+ * fold by definition, so this one is a timer and not a scroll timeline.
+ *
+ * No base rule, for the same reason `.reveal` and `.tear` have none: the hidden
+ * state lives in the `from` keyframe and `both` applies it during the stagger
+ * delay. Declaring `opacity: 0` here instead would make the whole hero depend
+ * on the animation being declared — and the two gates below do not cover every
+ * browser. A visitor on a reduced-motion device with scroll timelines supported
+ * matched neither, so the headline, the subhead, the CTAs and the POS preview
+ * all stayed at opacity 0. */
 .rise-in {
-  opacity: 0;
-  transform: translateY(16px);
+  animation: rise-in 560ms var(--ease-tira) both;
+  animation-delay: calc(var(--rise-index, 0) * 70ms);
 }
 
-@supports not (animation-timeline: view()) {
-  /* Without scroll timelines the reveal classes hold their first frame, so the
-   * hero has to finish on its own or the headline never appears. */
+@media (prefers-reduced-motion: reduce) {
+  /* No motion, and nothing hidden either: with no animation applied the element
+   * is simply the hero it always was. */
   .rise-in {
-    animation: rise-in 560ms var(--ease-tira) forwards;
-    animation-delay: calc(var(--rise-index, 0) * 70ms);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .rise-in {
-    animation: rise-in 560ms var(--ease-tira) forwards;
-    animation-delay: calc(var(--rise-index, 0) * 70ms);
+    animation: none;
   }
 }
 
 @keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
   to {
     opacity: 1;
     transform: none;
@@ -1087,6 +1109,42 @@
       animation-range: cover calc(22% + var(--line-index, 0) * 7%) cover
         calc(50% + var(--line-index, 0) * 7%);
     }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Tagline reveal.
+ *
+ * The one moment on the page where a sentence arrives word by word. The words
+ * share one scroll timeline — the tagline's own box — and each one opens on its
+ * own slice of it, so they light up in reading order and cost no observer, no
+ * state write and no main-thread work during scroll.
+ *
+ * The muted tone is the keyframe's `from` rather than a base rule, for the same
+ * reason every other reveal here works that way: the paragraph's resting state
+ * is the finished sentence. Without scroll timelines, or with reduced motion
+ * requested, the tagline simply reads as text.
+ * ------------------------------------------------------------------------- */
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .thesis {
+      view-timeline-name: --thesis;
+      view-timeline-axis: block;
+    }
+
+    .thesis-word {
+      animation: word-ink linear both;
+      animation-timeline: --thesis;
+      animation-range: cover calc(6% + var(--word-index, 0) * 0.7%) cover
+        calc(22% + var(--word-index, 0) * 0.7%);
+    }
+  }
+}
+
+@keyframes word-ink {
+  from {
+    color: color-mix(in srgb, var(--color-papel-alto) 30%, transparent);
   }
 }
 

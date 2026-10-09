@@ -83,11 +83,15 @@ export function CheckoutDialog() {
     }
   };
 
-  const plan = usePlansStore((state) => state.plans).find(
-    (candidate) => candidate.code === planCode,
-  );
-  const totalCents = plan
-    ? calculatePeriodPriceCents(plan.basePriceCents, billingPeriod)
+  const catalog = usePlansStore((state) => state.plans);
+  // Resolve against the catalog, falling back to its first entry rather than
+  // leaving `plan` undefined: a summary line reading a raw enum beside a $ 0
+  // total is the worst possible state to hand someone about to enter a NIT.
+  // The catalog is non-empty by construction (data/plans.ts throws otherwise).
+  const plan = catalog.find((candidate) => candidate.code === planCode);
+  const effectivePlan = plan ?? catalog[0];
+  const totalCents = effectivePlan
+    ? calculatePeriodPriceCents(effectivePlan.basePriceCents, billingPeriod)
     : 0;
   const apiBaseUrl = import.meta.env.VITE_API_URL as string | undefined;
 
@@ -168,7 +172,7 @@ export function CheckoutDialog() {
       ref={dialogRef}
       aria-labelledby="checkout-title"
       onClick={handleBackdropClick}
-      className="dialog-panel m-auto w-[min(28rem,calc(100%-2rem))] border border-line bg-papel-alto p-0 text-tinta shadow-xl backdrop:bg-tinta/60 backdrop:backdrop-blur-[2px]"
+      className="dialog-panel m-auto w-[min(28rem,calc(100%-2rem))] rounded-md border border-line bg-papel-alto p-0 text-tinta shadow-xl backdrop:bg-tinta/60 backdrop:backdrop-blur-[2px]"
     >
       <form onSubmit={handleSubmit} noValidate className="p-6 sm:p-8">
         <div className="flex items-start justify-between gap-4">
@@ -191,9 +195,9 @@ export function CheckoutDialog() {
         </div>
 
         {/* Order summary */}
-        <div className="mt-5 rounded-lg bg-papel p-4">
+        <div className="mt-5 rounded-md bg-papel p-4">
           <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="font-medium">{plan?.name ?? planCode}</span>
+            <span className="font-medium">{effectivePlan?.name ?? ""}</span>
             <span>{t(PERIOD_LABEL_KEY[billingPeriod])}</span>
           </div>
           <p className="data mt-2 text-right text-lg font-semibold">
@@ -312,7 +316,7 @@ export function CheckoutDialog() {
         {errorKey && (
           <p
             role="alert"
-            className="mt-5 rounded-lg border-l-4 border-error bg-error-fondo px-4 py-3 text-sm text-error"
+            className="mt-5 rounded-md border border-error bg-error-fondo px-4 py-3 text-sm text-error"
           >
             {t(`checkout.${errorKey}`)}
           </p>

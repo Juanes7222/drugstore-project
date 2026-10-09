@@ -39,6 +39,8 @@ import {
   waitVisible,
   waitGone,
   setSwitch,
+  readSwitch,
+  forceConfigSwitch,
   openConfigTab,
   openHubCard,
   openScreen,
@@ -63,6 +65,24 @@ const ADMIN: SuiteAccount = {
   identifier: "admin@pos-e2e.local",
   password: "123456",
   displayName: "Administradora Principal",
+};
+
+/**
+ * OWNER, not ADMIN, for the spec that writes tenant configuration.
+ *
+ * `GET|PUT /tenant-config` are `@Roles(MANAGER, OWNER)` and the server's
+ * supersession map is one-directional: OWNER satisfies MANAGER and ADMIN, but
+ * ADMIN supersedes nothing. So an ADMIN's save is refused with a 403 that the
+ * config page swallows into its error state, and `TenantConfig` keeps reporting
+ * "no config row" no matter how long the spec waits.
+ *
+ * OWNER is the pharmacy-owner role in the product; ADMIN is a platform
+ * administration role that is not meant to be used inside the shop.
+ */
+const OWNER: SuiteAccount = {
+  identifier: "owner@pos-e2e.local",
+  password: "123456",
+  displayName: "Dueña E2E",
 };
 
 /** Expires in 15 days: inside the sales-side 30-day warning window. */
@@ -155,8 +175,12 @@ describe("Lot expiration (real Tauri app against the real backend)", () => {
     await addProductToCart("otrivin", ALREADY_EXPIRED);
 
     const row = `//section[@data-nav-zone="cart"]//tr[.//p[contains(text(),"${ALREADY_EXPIRED}")]]`;
+    // `.` and not `text()`: the lot line is several JSX text nodes
+    // ("Lote", ": ", "LOT-004", " — ", "Vence", …), so `text()` only ever
+    // yields the first one — "Lote:" — and this predicate could never match
+    // however long it waited.
     await waitVisible(
-      `${row}//p[contains(text(),"LOT-004")]`,
+      `${row}//p[contains(.,"LOT-004")]`,
       20,
       500,
       "expired lot's cart row",
@@ -194,7 +218,10 @@ describe("Lot expiration (real Tauri app against the real backend)", () => {
     // The flag is the only thing that decides whether lot management exists at
     // all: with it off, `inventory-lots.page.tsx` renders a single "disabled"
     // paragraph and the hub page omits the card entirely.
-    await signInAs(ADMIN);
+    //
+    // OWNER, not ADMIN: an ADMIN's save is 403'd by @Roles(MANAGER, OWNER).
+    // See the OWNER account note.
+    await signInAs(OWNER);
 
     await openScreen("Configuración");
     await waitVisible(
@@ -210,8 +237,10 @@ describe("Lot expiration (real Tauri app against the real backend)", () => {
       1_000,
       "requireLotOnReception switch",
     );
-    await setSwitch("requireLotOnReception", true);
-    await waitForTenantConfigValue("purchases", "requireLotOnReception", true);
+    // BALANCED already ships `requireLotOnReception: true`, so a plain
+    // setSwitch(true) is a no-op that never PUTs and leaves this spec waiting
+    // for a row nothing would create. forceConfigSwitch guarantees the write.
+    await forceConfigSwitch("requireLotOnReception", "purchases", true);
 
     // With the flag on, the hub page grows a Lotes card.
     await openScreen("Productos");
@@ -233,14 +262,19 @@ describe("Lot expiration (real Tauri app against the real backend)", () => {
       1_000,
       "lot search",
     );
+    // The banner renders in a `<span>`, not a `<p>`, so the old selector found
+    // nothing and `summary` came back as "" — a bare "Expected: vencidos /
+    // Received: "" that reads like missing data rather than a wrong selector.
+    // Anchored on the i18n strings the banner actually joins with " · ".
     const summary = await browser.execute(() => {
-      const text = Array.from(document.querySelectorAll("p"))
+      const text = Array.from(document.querySelectorAll("span"))
         .map((el) => el.textContent ?? "")
         .find((t) => t.includes("activos") && t.includes("Stock total"));
       return text ?? "";
     });
-    expect(summary).toContain("vencidos");
     expect(summary).toMatch(/\d+\s+activos/);
+    expect(summary).toMatch(/\d+\s+vencidos/);
+    expect(summary).toMatch(/Stock total:\s*\d+/);
 
     // Turning the flag back off removes the card again, which proves the gate is
     // the flag and not a stale route.

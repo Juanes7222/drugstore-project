@@ -22,6 +22,17 @@ const SEARCH_SELECTOR =
   'input[aria-label="Buscar producto por nombre o código de barras..."]';
 
 /**
+ * Credentials of the account the suite is currently signed in as.
+ *
+ * The POS session is in-memory only, so a session that ends mid-run (an
+ * expired-and-rejected token, a stray logout) sends the app back to the login
+ * screen. `recoverFromLogin` replays these to get back in rather than failing
+ * the spec with a selector-shaped error about a screen that is legitimately
+ * gone. Set by `login` and `signInAs`.
+ */
+let lastSuccessfulLogin: { identifier: string; password: string } | null = null;
+
+/**
  * Isolation is handled once per RUN, by `resetWebViewProfile()` in onPrepare.
  *
  * There is deliberately no per-spec reset of the backend either: truncating it
@@ -211,29 +222,77 @@ export async function pinSidebar(): Promise<void> {
  *
  * Returns true when a reload was issued (the caller should re-login).
  */
-async function clearResidualCart(): Promise<boolean> {
-  const hasItems = await browser.execute(() => {
-    // The cart panel renders a table with product rows when non-empty.
-    return document.querySelectorAll("section table tbody tr").length > 0;
-  });
-  if (!hasItems) {
+/**
+ * Remove every line from the cart through the UI's own "Eliminar" control.
+ *
+ * Reloading the WebView was the previous way to do this and it was wrong twice
+ * over. The reload is asynchronous, so a poll of the DOM can read the
+ * PRE-reload page and return early, leaving the cart intact; and the POS session
+ * is in-memory only, so the reload drops it and sends the app to the login
+ * screen. Both symptoms showed up as a later spec failing on a cart it thought
+ * it had just emptied.
+ *
+ * The cart row's remove button is the reliable path. Note that `common.remove`
+ * ("Eliminar") labels BOTH the quantity decrement and the row's × button, so the
+ * selector takes the LAST match inside the last row — the decrement would
+ * otherwise silently subtract one unit instead of dropping the line.
+ *
+ * Returns whether anything was removed.
+ */
+async function clearCartViaUi(): Promise<boolean> {
+  const countRows = async (): Promise<number> =>
+    browser.execute((sel) => {
+      const cart = document.evaluate(
+        sel,
+        document,
+        null,
+        XPathResult.FIRST_ORDERED_NODE_TYPE,
+        null,
+      ).singleNodeValue as Element | null;
+      return cart ? cart.querySelectorAll("tbody tr").length : 0;
+    }, `${CART}//tbody`);
+
+  const before = await countRows();
+  if (before === 0) {
     return false;
   }
 
-  await browser
-    .execute(() => {
-      window.location.reload();
-    })
-    .catch(() => undefined);
-  // Reloaded WebView: wait for the booted sales screen again (fast poll —
-  // checks are ms; the warm app boots in seconds).
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    if (await isVisible(SEARCH_SELECTOR)) {
-      return true;
-    }
-    await browser.pause(500);
+  // One click per row, plus slack for a re-render between removals.
+  for (let step = 0; step < before + 2; step += 1) {
+    if ((await countRows()) === 0) break;
+
+    const removeLast =
+      `(${CART}//tbody/tr)[last()]//button[@aria-label="Eliminar"][last()]`;
+    const button = await $(removeLast);
+    await button.waitForExist({ timeout: 10_000 });
+    await button.click();
+    await browser.pause(250);
+  }
+
+  const after = await countRows();
+  if (after > 0) {
+    throw new Error(
+      `the cart still holds ${after} line(s) after every row's remove ` +
+        `control was clicked. Screen: ${await describeScreen()}`,
+    );
   }
   return true;
+}
+
+/**
+ * Drop a cart left behind by a previous spec, then get back to the sales screen.
+ *
+ * Called once per spec (from `signInAs` / `login`) and NEVER from
+ * `ensureSalesScreen`: `addProductToCart` calls `ensureSalesScreen` before every
+ * single product, so a cleanup there wiped the cart in the middle of a
+ * multi-item sale — `addProductToCart("ibuprofeno")` followed by
+ * `addProductToCart("acetaminofén")` silently lost the first line.
+ */
+export async function resetCartAndEnsureSalesScreen(): Promise<void> {
+  await ensureSalesScreen();
+  if (await clearCartViaUi()) {
+    await ensureSalesScreen();
+  }
 }
 
 /**
@@ -250,10 +309,15 @@ export async function login(
   identifier: string,
   password: string,
 ): Promise<void> {
-  // Already on the sales screen? ensureSalesScreen() handles residual-cart
-  // cleanup, so just delegate and return.
+  // Remembered for `recoverFromLogin`: the session lives in memory, so a
+  // mid-run logout leaves the app on the login screen and these are the only
+  // credentials the suite has to get back in with.
+  lastSuccessfulLogin = { identifier, password };
+
+  // Already on the sales screen? resetCartAndEnsureSalesScreen() handles
+  // residual-cart cleanup, so just delegate and return.
   if (await isVisible(SEARCH_SELECTOR)) {
-    await ensureSalesScreen();
+    await resetCartAndEnsureSalesScreen();
     return;
   }
 
@@ -299,7 +363,7 @@ export async function login(
 
     // 2. Already signed in? Jump to sales and finish.
     if (await isVisible(SEARCH_SELECTOR)) {
-      await ensureSalesScreen();
+      await resetCartAndEnsureSalesScreen();
       return;
     }
 
@@ -350,7 +414,7 @@ export async function login(
         continue;
       }
 
-      await ensureSalesScreen();
+      await resetCartAndEnsureSalesScreen();
       return;
     } catch (error) {
       // A form that remounted mid-interaction lands here; the next pass looks
@@ -379,20 +443,46 @@ async function pollFor(
 }
 
 /**
+ * Whether the app is sitting on the login / user-selection screen.
+ *
+ * The session lives in an in-memory Zustand store (`local-session.store.ts`,
+ * `create()` with no `persist`), so anything that ends the session — an
+ * expired-and-rejected token, a stray `logout()` — makes `AuthRedirect`
+ * navigate to the login screen mid-run. That is indistinguishable from a
+ * selector problem once a spec starts waiting on the sales screen, so it is
+ * detected here and recovered from rather than being reported as
+ * "element never became visible".
+ */
+async function isOnLoginScreen(): Promise<boolean> {
+  return browser.execute(() => {
+    if (document.querySelector('input[placeholder="usuario@ejemplo.com"]')) {
+      return true;
+    }
+    // Cached users render the avatar grid instead of the manual form, and the
+    // manual form only appears after "Otro usuario" is clicked.
+    return Array.from(document.querySelectorAll("button")).some((b) =>
+      b.textContent?.includes("Otro usuario"),
+    );
+  });
+}
+
+/**
  * Make sure the sales screen (with the product search input) is visible.
  *
  * After login the app lands on the Home dashboard, and the sales screen is
  * gated by an active cash shift: without one it shows ShiftRequiredOverlay.
  * This helper: Home → "Nueva venta"; if the shift overlay appears, opens a
  * cash shift through the Cash Shift page and returns to sales.
+ *
+ * It also recovers a mid-run logout: a session that ended between specs is a
+ * legitimate state to recover from, not a reason to fail, so the sign-in is
+ * replayed before the sales screen is reported as unreachable.
+ *
+ * Cart cleanup deliberately does NOT happen here — see
+ * `resetCartAndEnsureSalesScreen`, which runs once per spec instead.
  */
 export async function ensureSalesScreen(depth = 0): Promise<void> {
   if (await isVisible(SEARCH_SELECTOR)) {
-    // A failed spec can leave items in the cart (e.g. it died mid-payment);
-    // reset once per call chain so totals stay deterministic.
-    if (depth === 0 && (await clearResidualCart())) {
-      return ensureSalesScreen(1);
-    }
     return;
   }
 
@@ -417,7 +507,87 @@ export async function ensureSalesScreen(depth = 0): Promise<void> {
   if (await isVisible("button*=Nueva venta")) {
     await (await $("button*=Nueva venta")).click();
     await handleSalesGate();
+    return;
   }
+
+  // Nothing above applies. Before reporting the sales screen as unreachable,
+  // check whether the app logged itself out — otherwise the caller fails with
+  // a selector-shaped message for what is really an auth problem.
+  //
+  // Recovery restores the session but lands on Home, so navigation has to
+  // resume from the top rather than assuming the sales screen is up.
+  if (await recoverFromLogin()) {
+    return ensureSalesScreen(depth + 1);
+  }
+
+  throw new Error(
+    `the sales screen never became visible and the app is not on the login ` +
+      `screen either. Screen: ${await describeScreen()}`,
+  );
+}
+
+/**
+ * Re-establish the session when the app has dropped to the login screen.
+ *
+ * Signs back in with the credentials of the last successful `login` /
+ * `signInAs`, and waits for the shell to return. Returns whether a login was
+ * actually needed, so the caller can tell "recovered" from "was never logged
+ * out".
+ */
+async function recoverFromLogin(): Promise<boolean> {
+  if (!(await isOnLoginScreen())) {
+    return false;
+  }
+
+  const credentials = lastSuccessfulLogin;
+  if (!credentials) {
+    throw new Error(
+      "the app dropped to the login screen mid-run before any spec signed in, " +
+        "so the suite has no credentials to recover with",
+    );
+  }
+
+  const LOGIN_IDENTIFIER_SELECTOR = 'input[placeholder="usuario@ejemplo.com"]';
+
+  // The manual form sits behind "Otro usuario" whenever cached users render the
+  // avatar grid first, and that link itself fades in on a staggered animation
+  // (`delay: users.length * 0.05 + 0.15` in avatar-grid.tsx), so both the click
+  // and the form it reveals have to be waited for rather than sampled once.
+  if (!(await isVisible(LOGIN_IDENTIFIER_SELECTOR))) {
+    await waitVisible(
+      "button*=Otro usuario",
+      10,
+      500,
+      "other-user link",
+    );
+    await clickWhenPresent("button*=Otro usuario", "other-user link");
+    await waitVisible(
+      LOGIN_IDENTIFIER_SELECTOR,
+      20,
+      500,
+      "manual login form",
+    );
+  }
+
+  await setInputValue(
+    LOGIN_IDENTIFIER_SELECTOR,
+    credentials.identifier,
+    "login identifier",
+  );
+  await setInputValue(
+    'input[type="password"]',
+    credentials.password,
+    "login password",
+  );
+  await clickWhenPresent("button*=Ingresar", "login submit");
+
+  await waitVisible(
+    'nav[role="navigation"]',
+    60,
+    1_000,
+    "app shell after re-login",
+  );
+  return true;
 }
 
 /**
@@ -1531,6 +1701,80 @@ export async function expectConfigSection(heading: string): Promise<void> {
   );
 }
 
+/**
+ * Flip a config toggle to the OPPOSITE of its current value and wait for the
+ * server to have persisted that new value. Returns the value it was set to.
+ *
+ * Why not `setSwitch(id, true)`: that helper is idempotent by design, so asking
+ * for a value the toggle already holds is a no-op — and the tenant config page
+ * opens showing the ACTIVE PRESET's defaults, not zeroed ones. `BALANCED`
+ * ships `requireLotOnReception: true` and `requireExpiryOnReception: true`
+ * (tenant-config.service.ts), so "turn it on" was already true when the page
+ * rendered, nothing was ever PUT, no `TenantConfig` row was created, and the
+ * spec sat waiting for a write that could not happen.
+ *
+ * Driving the change off the observed state removes the dependency on which
+ * preset is active and proves the write in whichever direction actually moves.
+ */
+export async function toggleConfigSwitch(
+  id: string,
+  section: "purchases" | "strictness",
+): Promise<boolean> {
+  const selector = `button#${id}[role="switch"]`;
+  await waitVisible(selector, 20, 1_000, `Config switch #${id}`);
+
+  const before = await readSwitch(id);
+  const target = !before;
+  await setSwitch(id, target);
+
+  const { waitForTenantConfigValue } = await import("./server-state");
+  const config = await waitForTenantConfigValue(section, id, target);
+  if (config.configVersion <= 0) {
+    throw new Error(
+      `config switch #${id} reached ${target} but the persisted row reports ` +
+        `configVersion ${config.configVersion}`,
+    );
+  }
+  return target;
+}
+
+/**
+ * Drive a config switch to `desired` and guarantee the server has a ROW holding
+ * that value — even when the switch already displayed `desired`.
+ *
+ * `setSwitch` deliberately skips the click when the value already matches, so
+ * it cannot create the row on its own: on a fresh database the config page
+ * renders the active preset's values, `requireLotOnReception` is already `true`
+ * under BALANCED, and asking for `true` issued no PUT. The spec then waited a
+ * full minute for a `TenantConfig` row that nothing was ever going to create.
+ *
+ * So when the switch already reads `desired`, this flips it away and back. Both
+ * halves are persisted writes, which is what makes the final wait meaningful.
+ */
+export async function forceConfigSwitch(
+  id: string,
+  section: "purchases" | "strictness",
+  desired: boolean,
+): Promise<void> {
+  await waitVisible(`button#${id}[role="switch"]`, 20, 1_000, `Config switch #${id}`);
+
+  if ((await readSwitch(id)) !== desired) {
+    await setSwitch(id, desired);
+  } else {
+    await setSwitch(id, !desired);
+    await setSwitch(id, desired);
+  }
+
+  const { waitForTenantConfigValue } = await import("./server-state");
+  const config = await waitForTenantConfigValue(section, id, desired);
+  if (config.configVersion <= 0) {
+    throw new Error(
+      `config switch #${id} shows ${desired} but no TenantConfig row was ` +
+        `created (configVersion ${config.configVersion})`,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Session identity and switching
 // ---------------------------------------------------------------------------
@@ -1714,6 +1958,13 @@ export interface SuiteAccount {
  * first and only acts when it does not match.
  */
 export async function signInAs(account: SuiteAccount): Promise<void> {
+  // Recorded up front so a session that drops mid-spec can be re-established
+  // as this account rather than as whoever signed in previously.
+  lastSuccessfulLogin = {
+    identifier: account.identifier,
+    password: account.password,
+  };
+
   // Establishing a session is not the same as keeping it: see the note above.
   for (let attempt = 0; attempt < 3; attempt += 1) {
     // A modal left open by the previous spec would swallow every click below
@@ -1723,11 +1974,11 @@ export async function signInAs(account: SuiteAccount): Promise<void> {
     const current = await currentUserName();
 
     if (current.includes(account.displayName)) {
-      await ensureSalesScreen();
+      await resetCartAndEnsureSalesScreen();
     } else if (current !== "") {
       // A session exists for somebody else - swap it through QuickSwitch.
       await switchUser(account.displayName, account.password);
-      await ensureSalesScreen();
+      await resetCartAndEnsureSalesScreen();
     } else {
       await login(account.identifier, account.password);
       const signedIn = await currentUserName();

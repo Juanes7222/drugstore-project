@@ -141,6 +141,11 @@ pantalla.
 │ └────────────────┘ └────────────────┘ └──────────────────┘           │
 │ Escaneo y lotes   Fórmula médica    Turno de caja                    │
 │ ╱╲__╱╲__╱╲__╱╲__   ← borde rasgado                                  │
+│ ███ BANDA VERDE — LA TESIS, sin folio, entre dos argumentos          │
+│ La droguería entera en una sola caja. Vencimientos a la vista,        │
+│ fórmulas que no dependen de la memoria y facturas que llegan a la     │
+│ DIAN sin que usted las mande a mano.   ← se enciende palabra a palabra│
+│ ╱╲__╱╲__╱╲__╱╲__   ← borde rasgado                                  │
 │ ███ BANDA OSCURA A SANGRE (tinta) — folio 03                        │
 │ Se fue internet. La caja sigue abierta.  ┌── TERMINAL FIJADA ────────┐ │
 │ 01 Cobra como siempre                   │ ╭ Droguería La Esper. ╮  │ │
@@ -178,8 +183,41 @@ pantalla.
 
 Ancho de contenido: `max-w-[78rem]` (1248 px), `px-5 sm:px-8`. Padding vertical
 de sección: `pt-12 pb-20` (móvil) → `lg:pt-16 lg:pb-28`. El suelo se alterna
-para que el rasgado tenga dos lados: `papel → papel-alto → tinta → papel →
-papel-alto → papel → verde → tinta`.
+para que el rasgado tenga dos lados: `papel → papel-alto → verde → tinta →
+papel → papel-alto → papel → verde → tinta`.
+
+### La tesis no es un folio
+
+La banda verde del medio (`thesis.tsx`) es lo único que la página intercala sin
+folio y sin etiqueta. Va entre el mostrador y la banda sin conexión porque ese
+es el punto del documento donde el lector ya vio *qué* hace el producto y todavía
+no ha visto *que sobrevive sin red*: ahí la promesa general rinde más que un
+titular de sección.
+
+Comparte suelo con la banda del troquel final, y esa repetición es deliberada —
+la tesis abre con `verde` lo que el troquel cierra con `verde`, y la página usa
+ese color exactamente dos veces para eso.
+
+No declara ninguna etiqueta de folio a propósito. El número de folio dice "está
+leyendo el documento N de 6"; un bloque fuera de esa cuenta que además se
+presenta como la tesis del documento se contradice.
+
+| Motivo | Dónde |
+| --- | --- |
+| *La línea se dibuja* | rasgado (horizontal), regla del total (horizontal), regla de activación (horizontal) |
+| *El papel se imprime* | líneas del carrito, filas de los paneles del mostrador, documentos de plan, troquel final |
+| *La máquina está viva* | scanline del POS de portada, giro del glyph de cola, drenaje de la cola, conteo de cifras |
+| *La tinta llega* | palabras de la tesis, una por una |
+
+Las palabras de la tesis comparten una sola línea de tiempo — la caja del propio
+titular — y cada una abre en su porción, así que se encienden en orden de
+lectura sin un solo observer. El tono apagado es el `from` del keyframe, no una
+regla base: el titular en reposo es el titular terminado, y sin scroll timelines
+—o con movimiento reducido— se lee la frase entera de una vez.
+
+El escalón del escalonamiento (0,7 % por palabra) está en el CSS, igual que el
+de `.cart-line` y `.step-node`. Si la tesis crece o se acorta, hay que revisarlo:
+con muchas más palabras las últimas nunca llegan a abrirse dentro del recorrido.
 
 ## Firma
 
@@ -236,6 +274,7 @@ posición del lector y termina en su estado final.
 | Activación | la regla se dibuja y los tres nodos caen sobre ella |
 | Preguntas | fade-up |
 | Troquel final | el documento se imprime |
+| Tesis | las palabras se encienden una a una |
 
 Además: el rasgado de cada frontera, la barra de lectura del header y el latido
 del punto de estado. **Un solo loop ambiental** (el scanline del POS de la
@@ -348,6 +387,32 @@ La migración a `view()` eliminó los dos hooks que carryban ese estado
 (`data-visible` / `data-printed`) y con ellos la clase entera de bugs.
 
 
+### El bug que dejó el héroe en blanco
+
+`.rise-in` era la única animación de la página que **sí** declaraba su estado
+oculto en la regla base (`opacity: 0; transform: translateY(16px)`). Sus dos
+gates — `@supports not (animation-timeline: view())` y
+`@media (prefers-reduced-motion: no-preference)` — no cubren todos los
+navegadores, y hay al menos un tercero que no está en ninguno de los dos.
+
+Un visitante con `prefers-reduced-motion: reduce` en un navegador que **sí**
+soporta scroll timelines no cumplía ninguno: sin animación aplicada, el `opacity: 0`
+de la base se quedaba. Titular, subheadline, los dos CTA, los chips de confianza
+y el preview del POS, invisibles. Todo lo que está sobre el pliegue.
+
+La corrección es la regla que la página ya se había dado a sí misma: el estado
+oculto vive en el `from` del keyframe y `both` lo aplica durante el retardo del
+escalonado. `.rise-in` queda sin regla base, la animación se declara una sola vez
+fuera de los gates, y `prefers-reduced-motion: reduce` hace `animation: none` —
+que en un elemento cuyo estado en reposo *es* su estado final no oculta nada.
+
+El modo de fallo generaliza: **una animación con dos gates que no se cubren entre
+sí es una animación con un hueco.** Si el estado inicial no es visible, todo lo
+que no declare animación se queda invisible. Por eso `.tear`, `.print-face`,
+`.reveal`, `.cart-line` y `.price-was` no tienen regla base, y ahora `.rise-in`
+tampoco.
+
+
 ## Copy
 
 - Español, sentence case, voz de asesor de confianza, frases cortas,
@@ -416,10 +481,41 @@ La migración a `view()` eliminó los dos hooks que carryban ese estado
   Sin `VITE_API_URL` configurado: error claro, no intento silencioso.
 - Precios en vivo: `GET {VITE_API_URL}/public/plans`, semilla primero, swap
   silencioso, fallo = semilla. La procedencia se muestra en la banda de planes.
+- El frame (header + footer) vive en `page-frame.tsx` y lo usan la portada, las
+  tres rutas legales y el 404. Antes las legales renderizaban un `<main>` pelado:
+  sin cabecera, sin pie y sin skip link, que se leía como otro sitio y no como
+  otra página.
+- 404: `path="*"` renderiza un folio que no existe, con la ruta pedida impresa en
+  mono. No redirige a `/` en silencio — quien pidió un documento concreto tiene
+  derecho a saber cuál falta.
+- Fragmentos: `ScrollToTop` resuelve el ancla a mano. Es un SPA, así que en una
+  carga en frío el salto del navegador ocurre antes de que React haya renderizado
+  el destino: un enlace compartido tipo `/#faq` aterrizaba en el héroe.
+- Social preview: `og:url` / `og:image` / `twitter:*` los inyecta el plugin
+  `social-preview` de `vite.config.ts`, no `index.html`. `og:image` tiene que ser
+  una URL absoluta y los crawlers la leen del HTML servido sin ejecutar JavaScript,
+  así que no puede venir del env en runtime como el resto (`web-entrypoint.sh`). La
+  sustitución `%VITE_*%` de Vite tampoco servía: sin la variable deja el marcador
+  literal en la etiqueta. Sin `VITE_SITE_URL` el plugin **omite** las etiquetas en
+  vez de emitirlas con una ruta relativa que ningún crawler resolvería.
 - CORS dev: el servidor permite `http://localhost:5173`; esta app corre en
   **5174 strictPort** → `CORS_ORIGIN=http://localhost:5173,http://localhost:5174`.
 - Iconos: lucide vía better-icons CLI, SVG en línea con `currentColor`. El
   archivo `icons.tsx` solo contiene los glifos que la página usa.
+
+## Pendientes del negocio (bloquean lanzamiento, no de diseño)
+
+- Definir canal real de soporte/contacto y llenar `support.channel_email`.
+  Mientras tanto las políticas legales apuntan a los canales que llegan con el
+  código de activación, que sí existen, en vez de a un canal vacío.
+- Definir `VITE_SITE_URL` en producción (= `DOMAIN_LANDING`) y pasarlo como arg
+  de build; sin él el enlace no lleva imagen al compartirse.
+- Confirmar nombre de marca (sigue siendo PuntoFarma provisional).
+- Prueba social: `cta_band.testimonial` sigue vacío a propósito. Nada de
+  inventar un nombre en un sitio vivo.
+- Consentimiento de cookies: no hay banner. Bajo la Ley 1581 los datos del
+  checkout son necesarios para la contratación, pero es una decisión legal
+  escrita y no un problema de diseño.
 
 ### Componentes de terceros — veredicto
 

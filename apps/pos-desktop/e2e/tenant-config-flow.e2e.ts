@@ -34,6 +34,7 @@ import {
   waitVisible,
   setSwitch,
   readSwitch,
+  toggleConfigSwitch,
   openConfigTab,
   expectConfigSection,
   openScreen,
@@ -101,19 +102,25 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
 
     // No row exists before the first save: TenantConfigService.getBySubscription
     // serves a computed BALANCED default and only `update` creates it.
-    const before = await fetchServerTenantConfig();
-    expect(before?.purchases.requireLotOnReception ?? false).toBe(false);
+    expect(await fetchServerTenantConfig()).toBeNull();
 
     await openConfigTab("Compras");
     await expectConfigSection("Configuración de recepciones");
 
-    await setPurchasesSwitch("requireLotOnReception", true);
-    expect(await readSwitch("requireLotOnReception")).toBe(true);
+    // Driven off the observed state, not an assumed default: the config page
+    // opens showing the ACTIVE PRESET's values and BALANCED already ships
+    // `requireLotOnReception: true`, so "set it to true" would have been a no-op
+    // that never issued a PUT.
+    const target = await toggleConfigSwitch(
+      "requireLotOnReception",
+      "purchases",
+    );
+    expect(await readSwitch("requireLotOnReception")).toBe(target);
 
     // ---- Server side: the row exists now and carries the flag.
     const after = await fetchServerTenantConfig();
     expect(after).not.toBeNull();
-    expect(after?.purchases.requireLotOnReception).toBe(true);
+    expect(after?.purchases.requireLotOnReception).toBe(target);
 
     // The changelog is the audit trail a pharmacy needs to answer "who turned
     // this on, and when" — and it is the only proof the save went through the
@@ -123,6 +130,11 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
     expect(entry).toBeDefined();
     expect(entry?.changeType).toBe("FIELD_UPDATED");
     expect(entry?.configVersion).toBe(after?.configVersion);
+
+    // Toggle back, so the flag does not leak into the specs that follow.
+    expect(await toggleConfigSwitch("requireLotOnReception", "purchases")).toBe(
+      !target,
+    );
   });
 
   it("E2E-T02: requiring an expiry date on reception persists and bumps the version", async () => {
@@ -132,31 +144,36 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
     await openConfigTab("Compras");
     await expectConfigSection("Configuración de recepciones");
 
-    const versionBefore = (
-      await waitForTenantConfigValue("purchases", "requireLotOnReception", true)
-    ).configVersion;
+    // Snapshot the sibling flag so independence can be asserted relatively —
+    // BALANCED already ships both of these on, so pinning them to `true` would
+    // hand the spec a pass without ever exercising a write.
+    const before = await fetchServerTenantConfig();
+    const lotBefore = before?.purchases.requireLotOnReception;
 
-    await setPurchasesSwitch("requireExpiryOnReception", true);
-    expect(await readSwitch("requireExpiryOnReception")).toBe(true);
-
-    // The two flags are independent: turning the second one on must not have
-    // reverted the first, which is what a whole-section overwrite would do.
-    const after = await waitForTenantConfigValue(
-      "purchases",
+    const target = await toggleConfigSwitch(
       "requireExpiryOnReception",
-      true,
+      "purchases",
     );
-    expect(after.purchases.requireLotOnReception).toBe(true);
-    expect(after.configVersion).toBeGreaterThan(versionBefore);
+    expect(await readSwitch("requireExpiryOnReception")).toBe(target);
+
+    // The two flags are independent: turning the second one must not have
+    // reverted the first, which is what a whole-section overwrite would do.
+    const after = await fetchServerTenantConfig();
+    expect(after?.purchases.requireLotOnReception).toBe(lotBefore);
+    expect(after?.configVersion).toBeGreaterThan(before?.configVersion ?? 0);
 
     // Over-reception is a third, independent flag in the same section.
-    await setPurchasesSwitch("allowOverReception", true);
-    const withOver = await waitForTenantConfigValue(
-      "purchases",
-      "allowOverReception",
-      true,
-    );
-    expect(withOver.purchases.requireExpiryOnReception).toBe(true);
+    const overTarget = await toggleConfigSwitch("allowOverReception", "purchases");
+    const withOver = await fetchServerTenantConfig();
+    expect(withOver?.purchases.requireExpiryOnReception).toBe(target);
+
+    // Restore both, so this spec does not leak into the ones that follow.
+    expect(
+      await toggleConfigSwitch("allowOverReception", "purchases"),
+    ).toBe(!overTarget);
+    expect(
+      await toggleConfigSwitch("requireExpiryOnReception", "purchases"),
+    ).toBe(!target);
   });
 
   it("E2E-T03: an Operación strictness change persists alongside the purchases flags", async () => {
@@ -164,7 +181,16 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
     await openConfig();
 
     await openConfigTab("Operación");
-    await expectConfigSection("Validación de stock");
+    // "Validación de stock" is a field LABEL, not a section heading: the
+    // Operación tab opens on the "Niveles de exigencia" section. Waiting on the
+    // label made this spec time out even when the tab rendered correctly.
+    await expectConfigSection("Niveles de exigencia");
+
+    // Snapshot the sibling section first; see T02 for why these are compared
+    // relatively rather than pinned to `true`.
+    const snapshot = await fetchServerTenantConfig();
+    const purchasesBefore = snapshot?.purchases.requireLotOnReception;
+    const expiryBefore = snapshot?.purchases.requireExpiryOnReception;
 
     // The Operación tab renders its booleans as `type="checkbox"` with an
     // `sr-only` input (unlike the Compras tab's role="switch" buttons), and its
@@ -180,8 +206,8 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
     );
     // The purchases section is untouched by an Operación change — both live in
     // the same row, so a whole-row overwrite would show up here.
-    expect(config.purchases.requireLotOnReception).toBe(true);
-    expect(config.purchases.requireExpiryOnReception).toBe(true);
+    expect(config.purchases.requireLotOnReception).toBe(purchasesBefore);
+    expect(config.purchases.requireExpiryOnReception).toBe(expiryBefore);
 
     const changelog = await fetchServerConfigChangelog();
     expect(changelog.some((row) => row.fieldPath === "strictness")).toBe(true);

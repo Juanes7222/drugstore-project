@@ -229,7 +229,9 @@ export function OfflinePanel() {
       aria-labelledby="offline-title"
       className="scroll-mt-20 bg-tinta text-papel-alto"
     >
-      <Tear bite="var(--color-papel-alto)" />
+      {/* The surface above is now the green tagline band, so the bites are cut
+          from verde rather than from the counter's raised sheet. */}
+      <Tear bite="var(--color-verde)" />
 
       <div className="mx-auto max-w-[78rem] px-5 pt-12 pb-20 sm:px-8 lg:pt-16 lg:pb-28">
         <div className="max-w-xl">

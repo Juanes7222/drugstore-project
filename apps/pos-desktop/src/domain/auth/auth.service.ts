@@ -12,7 +12,11 @@
  */
 import { RoleType } from '@pharmacy/shared-types';
 import { useLocalSessionStore, LocalSession } from './local-session.store';
-import { NoActiveSessionException, InsufficientRoleException } from './exceptions';
+import {
+  NoActiveSessionException,
+  InsufficientRoleException,
+  NetworkErrorException,
+} from './exceptions';
 import {
   createAuthHttpClient,
   AuthHttpClient,
@@ -71,6 +75,30 @@ export interface AuthServiceConfig {
   baseUrl: string;
   /** Optional override of the HTTP client (for testing). */
   httpClient?: AuthHttpClient;
+}
+
+/**
+ * Whether a refresh failure means the credentials are genuinely dead.
+ *
+ * Only an explicit rejection by the server does: 401 (token no longer valid)
+ * and 403 (refresh token revoked or rotated out from under us). Everything
+ * else — a 5xx, a timeout, a DNS failure, a connection reset — says nothing
+ * about the token's validity, and treating those as a logout is what used to
+ * throw the cashier back to the login screen whenever the network hiccuped.
+ *
+ * An unrecognised error is treated as a rejection, matching the previous
+ * behaviour: when the failure cannot be classified, the safe assumption is
+ * that the session really did end.
+ */
+function isCredentialRejection(error: unknown): boolean {
+  if (error instanceof HttpStatusException) {
+    return error.status === 401 || error.status === 403;
+  }
+  // `NetworkErrorException` is a transport fault by definition.
+  if (error instanceof NetworkErrorException) {
+    return false;
+  }
+  return true;
 }
 
 export const createAuthService = (config: AuthServiceConfig): AuthService => {
@@ -306,8 +334,17 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         });
 
         return updatedSession;
-      } catch {
-        useLocalSessionStore.getState().clearSession();
+      } catch (error) {
+        // Only a server-side rejection means the credentials are genuinely
+        // dead. A network blip, a DNS failure or a hung request proves
+        // nothing about the token, and dropping the session on those ejects
+        // the cashier to the login screen mid-sale — which is exactly what a
+        // pharmacy terminal must not do over a transient fault. `AuthRedirect`
+        // turns a null session into a navigation, so this branch decides
+        // whether the user keeps working.
+        if (isCredentialRejection(error)) {
+          useLocalSessionStore.getState().clearSession();
+        }
         return null;
       }
     },
