@@ -31,7 +31,9 @@ import {
   openScreen,
   setInputValue,
   clickButtonByExactText,
+  clickButtonInScope,
   resetForSpec,
+  waitGone,
   type SuiteAccount,
 } from "./helpers";
 import {
@@ -56,9 +58,35 @@ const NEW_USER = {
   pin: "4821",
 };
 
-/** Row for a user, located by the display name it renders in the first column. */
+/**
+ * Row for a user, located by the display name it renders in the first column.
+ *
+ * Written `td//p`, not the `.//p` the other specs use, because WebView2's
+ * `evaluate` rejects an XPath with `//` directly inside a nested predicate:
+ * `//tr[.//p[…]]` comes back as "not a valid XPath expression", and every
+ * `waitVisible` retry then re-sends the same broken string for the full
+ * timeout. `td//p` is an ordinary child path inside the predicate and parses.
+ */
 function userRow(displayName: string): string {
-  return `//tr[.//p[normalize-space(.)="${displayName}"]]`;
+  return `//tr[td//p[normalize-space(.)="${displayName}"]]`;
+}
+
+/**
+ * The actions CELL of that row — the last cell, which holds Editar / Desactivar
+ * / Reset PIN / Eliminar.
+ *
+ * A dedicated helper because `userRow(x) + " button"` compounds the problem
+ * above into a trailing descendant step, which this driver also refuses. One
+ * path expression per selector, and this one stops at the cell so
+ * `clickButtonInScope` can append its own `//button[…]` step to it.
+ */
+function userRowActionsCell(displayName: string): string {
+  return `//tr[td//p[normalize-space(.)="${displayName}"]]/td[last()]`;
+}
+
+/** The row's action buttons, for readiness checks. */
+function userRowActions(displayName: string): string {
+  return `${userRowActionsCell(displayName)}//button`;
 }
 
 /**
@@ -164,8 +192,15 @@ describe("User management (real Tauri app against the real backend)", () => {
     expect(user.pinHash ?? "").not.toBe("");
     expect(user.authMethod).toBe("PIN_ONLY");
 
-    // And the server refuses a second user with the same username rather than
-    // creating a duplicate identity.
+    // And the server refuses a second account claiming the same EMAIL rather
+    // than creating a duplicate identity.
+    //
+    // EMAIL, not username: the schema makes `User.email` `@unique` but leaves
+    // `User.username` as a plain nullable column behind a non-unique
+    // `@@index([subscriptionId, username])` (auth.prisma). So a repeated
+    // username is accepted by design and this spec used to assert a rejection
+    // the server never performed — it passed for the wrong reason on a stale
+    // toast and failed outright once that toast was gone.
     await clickButtonByExactText("+ Agregar usuario");
     await waitVisible(
       `${CREATE_MODAL} input[placeholder="Nombre del usuario"]`,
@@ -179,17 +214,25 @@ describe("User management (real Tauri app against the real backend)", () => {
       "duplicate display name",
     );
     await setInputValue(
-      `${CREATE_MODAL} input[placeholder="Nombre de usuario (opcional)"]`,
-      NEW_USER.username,
-      "duplicate username",
+      `${CREATE_MODAL} input[placeholder="correo@ejemplo.com (opcional)"]`,
+      NEW_USER.email,
+      "duplicate email",
     );
     await clickButtonByExactText("Crear");
     await expectToast("Error al crear usuario");
 
     const users = await fetchServerUsers();
-    expect(users.filter((u) => u.username === NEW_USER.username)).toHaveLength(
-      1,
-    );
+    expect(users.filter((u) => u.email === NEW_USER.email)).toHaveLength(1);
+    expect(
+      users.filter((u) => u.fullName === `${NEW_USER.displayName} duplicado`),
+    ).toHaveLength(0);
+
+    // A rejected create leaves its modal open, and the backdrop then swallows
+    // every navigation click in the specs that follow — the next spec failed
+    // with "element click intercepted" on a sidebar item, which points at the
+    // screen and not at the leftover overlay that was actually in the way.
+    await clickButtonByExactText("Cancelar");
+    await waitGone(CREATE_MODAL, 10, 500, "create modal");
   });
 
   it("E2E-U02: resetting the PIN rehashes it server-side", async () => {
@@ -206,9 +249,8 @@ describe("User management (real Tauri app against the real backend)", () => {
       "user table filters",
     );
 
-    const row = userRow(NEW_USER.displayName);
-    await waitVisible(`${row} button`, 30, 500, "user row actions");
-    await clickButtonByExactText("Reset PIN");
+    await waitVisible(userRowActions(NEW_USER.displayName), 30, 500, "user row actions");
+    await clickButtonInScope(userRowActionsCell(NEW_USER.displayName), "Reset PIN");
 
     // The PIN dialog is a plain overlay too, so it is the same `pos-panel`
     // dialog shape as the create modal; only one is open at a time here.
@@ -257,8 +299,8 @@ describe("User management (real Tauri app against the real backend)", () => {
 
     // "Activar" is a substring of "Desactivar", so the button is matched on its
     // EXACT text inside the row — a partial match would toggle the wrong way.
-    await waitVisible(`${row} button`, 30, 500, "user row actions");
-    await clickButtonByExactText("Desactivar");
+    await waitVisible(userRowActions(NEW_USER.displayName), 30, 500, "user row actions");
+    await clickButtonInScope(userRowActionsCell(NEW_USER.displayName), "Desactivar");
     await expectToast("Usuario desactivado");
 
     const disabled = await waitForServerUserStatus(
@@ -269,19 +311,14 @@ describe("User management (real Tauri app against the real backend)", () => {
 
     // The row renders "Activar" now, and a status filter proves the change is a
     // server-side query rather than a local one.
-    await waitVisible(
-      `${userRow(NEW_USER.displayName)} button`,
-      30,
-      500,
-      "user row actions",
-    );
+    await waitVisible(userRowActions(NEW_USER.displayName), 30, 500, "user row actions");
 
     await (
       await $('select[aria-label="Filtrar por estado"]')
     ).selectByAttribute("value", "DISABLED");
     await waitVisible(row, 30, 500, "user row under the DISABLED filter");
 
-    await clickButtonByExactText("Activar");
+    await clickButtonInScope(userRowActionsCell(NEW_USER.displayName), "Activar");
     await expectToast("Usuario activado");
 
     const enabled = await waitForServerUserStatus(NEW_USER.username, "ACTIVE");

@@ -1118,6 +1118,73 @@ export async function clickButtonByExactText(
   await target.click();
 }
 
+/**
+ * Click the button carrying `text` INSIDE a container, requiring the label to be
+ * unique within that container rather than across the whole page.
+ *
+ * `clickButtonByExactText` searches the entire document, which is the right
+ * default but unworkable inside a repeated row: every user row renders "Editar",
+ * "Desactivar", "Reset PIN" and "Eliminar", so a table of three made it refuse
+ * with "3 buttons carry the exact label" — correctly, since on a whole-page
+ * search there genuinely is no single target. Scoping the search to the row
+ * restores the single target the spec actually meant, without weakening the
+ * guard: a label that appears twice inside one row still fails.
+ */
+export async function clickButtonInScope(
+  scopeXpath: string,
+  text: string,
+  options: { attempts?: number; interval?: number } = {},
+): Promise<void> {
+  const { attempts = 20, interval = 500 } = options;
+  const xpath = `${scopeXpath}//button[normalize-space(.)=${xpathLiteral(text)} or @aria-label=${xpathLiteral(text)}]`;
+
+  await browser.waitUntil(
+    async () => {
+      const found = await browser.execute(
+        (root: string, wanted: string) => {
+          const hit = (el: Element) => {
+            const aria = el.getAttribute("aria-label")?.trim();
+            const own = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+            return aria === wanted || own === wanted;
+          };
+          const node = document.evaluate(
+            root,
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null,
+          ).singleNodeValue as Element | null;
+          if (!node) return { count: 0, labels: [] as string[] };
+          const buttons = Array.from(node.querySelectorAll("button"));
+          return {
+            count: buttons.filter(hit).length,
+            labels: buttons.map((el) => (el.textContent ?? "").trim()),
+          };
+        },
+        scopeXpath,
+        text,
+      );
+
+      if (found.count > 1) {
+        throw new Error(
+          `${found.count} buttons inside ${scopeXpath} carry the exact label ` +
+            `${JSON.stringify(text)}: ${JSON.stringify(found.labels)}`,
+        );
+      }
+      return found.count === 1;
+    },
+    {
+      timeout: attempts * interval,
+      interval,
+      timeoutMsg: `no button carrying "${text}" inside ${scopeXpath}`,
+    },
+  );
+
+  const target = await $(xpath);
+  await target.scrollIntoView({ block: "center", inline: "center" });
+  await target.click();
+}
+
 /** Assert an actual amount equals the expected one to the cent. */
 export function expectPesos(
   actual: number,
@@ -1370,23 +1437,45 @@ export async function waitGone(
  *
  * `data-ready="true"` is required because sileo animates the toast in and the
  * text is present before the element is fully shown.
+ *
+ * EVERY visible toast is read, not just the first. Toasts stack, and a spec
+ * that performs two actions back to back still has the first one's success
+ * toast on screen (they auto-dismiss after seconds) when the second one fires.
+ * Reading only the head of the stack made the older toast answer for the newer
+ * one — the user-management spec asserted an error was raised, read the
+ * previous "Usuario creado exitosamente", and reported a contradiction between
+ * two things it never actually observed together.
+ *
+ * Because an unrelated toast can therefore be on screen, this no longer fails
+ * fast on the first mismatch: it keeps polling and reports everything it saw
+ * once the budget is spent.
  */
 export async function expectToast(expected: string): Promise<void> {
   const TOAST = '[data-sileo-toast][data-ready="true"]';
   const deadline = Date.now() + 20_000;
+  const seen: string[] = [];
 
   while (Date.now() < deadline) {
-    const text = await readText(TOAST);
-    if (text.includes(expected)) return;
+    const texts = await browser.execute(
+      (sel: string) =>
+        Array.from(document.querySelectorAll(sel))
+          .map((el) => el.textContent?.trim() ?? "")
+          .filter((text) => text !== ""),
+      TOAST,
+    );
 
-    if (text !== "") {
-      throw new Error(
-        `a toast appeared but did not carry "${expected}": ${text}`,
-      );
+    for (const text of texts) {
+      if (text.includes(expected)) return;
+      if (!seen.includes(text)) seen.push(text);
     }
     await browser.pause(500);
   }
-  throw new Error(`no toast carrying "${expected}" appeared within 20s`);
+
+  throw new Error(
+    seen.length > 0
+      ? `no toast carrying "${expected}" appeared within 20s. Toasts seen: ${seen.join(" | ")}`
+      : `no toast carrying "${expected}" appeared within 20s`,
+  );
 }
 
 /**

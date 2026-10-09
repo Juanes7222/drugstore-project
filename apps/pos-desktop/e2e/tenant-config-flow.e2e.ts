@@ -100,9 +100,13 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
     await signInAs(OWNER);
     await openConfig();
 
-    // No row exists before the first save: TenantConfigService.getBySubscription
-    // serves a computed BALANCED default and only `update` creates it.
-    expect(await fetchServerTenantConfig()).toBeNull();
+    // Deliberately NOT asserting the row is absent. `TenantConfigService.getBySubscription`
+    // serves a computed preset default until the first save creates the row, but a
+    // spec running earlier in the same session may already have created it — the
+    // lot-expiry spec ends by turning requireLotOnReception back off, and that
+    // write is a row. Asserting absence made this spec depend on its position in
+    // the run: green in isolation, red as spec 8 of 8.
+    const before = await fetchServerTenantConfig();
 
     await openConfigTab("Compras");
     await expectConfigSection("Configuración de recepciones");
@@ -117,10 +121,12 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
     );
     expect(await readSwitch("requireLotOnReception")).toBe(target);
 
-    // ---- Server side: the row exists now and carries the flag.
+    // ---- Server side: the row carries the flag at a version above where it
+    // started, which is what proves a version-guarded write actually landed.
     const after = await fetchServerTenantConfig();
     expect(after).not.toBeNull();
     expect(after?.purchases.requireLotOnReception).toBe(target);
+    expect(after?.configVersion).toBeGreaterThan(before?.configVersion ?? 0);
 
     // The changelog is the audit trail a pharmacy needs to answer "who turned
     // this on, and when" — and it is the only proof the save went through the
