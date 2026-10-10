@@ -217,6 +217,54 @@ No other element in the application uses a full-width animated line. It is the s
 
 ---
 
+### Signature Element — The Struck-Through Original (cart line amendment)
+
+The cart row is a ledger entry, not a product card: identity on the left, an
+arithmetic stack on the right that prints the meaning of every figure
+(`2 × $12.400`, `−10% −$2.480`) so the panel needs no column headers at all.
+
+When a cashier overrides a price, the catalog figure stays in the column and is
+**struck through**, with the live price after it:
+
+```
+┃ Ibuprofeno 400 mg        2 × $ 12.400 $ 9.900
+┃ [−][2][+]                 —                      ← discount control, always present
+┃ Lote IB-2411 · Vence 15/07
+┃                           ──────────            ← rule, amended rows only
+┃                             $ 19.800
+```
+
+**Why strikethrough is safe here.** Elsewhere in UI, strikethrough means
+*deleted*, which would be a semantic error — the cashier never deleted the
+catalog price, it still exists in the audit trail. Here it means *superseded but
+still in force*, which is the notation of an invoice. The mark works **because
+no other surface in this app uses strikethrough**, so it collides with no
+established meaning. Any future screen that needs a true "removed" state must
+use a different mark.
+
+**It reads without colour.** Two ink weights carry it and no hue does: the
+glyphs recede to 60% ink while the strike rule itself stays at full ink, with
+`text-decoration-skip-ink: none` so digits do not punch holes in the line. The
+glyphs sit at ≈4.7:1 on the panel so the superseded number stays auditable —
+recessive, not illegible. A `sr-only` "Precio original $ 12.400" accompanies
+it, because assistive technology has no strikethrough at all and would
+otherwise read it as a second, competing price.
+
+**Guard.** Nothing is struck unless there is genuinely something to strike:
+`originalUnitPriceCents` must be a number *and* differ from the live price. Held
+carts persisted before the field existed rehydrate from `localStorage` with the
+key absent, so the check is a `typeof` test rather than a `!== null` test —
+`undefined !== null` would pass and print `$ NaN`.
+
+**A discount alone amends a line without a strike.** The unit price was never
+touched; the discount is applied at line level. The `−10% −$2.480` term and the
+heavier left rule are the whole signal.
+
+**Motion budget:** none. The amendment is itself the feedback; it must not
+flash, because the cashier is mid-scan and a flash costs a re-read.
+
+---
+
 ### SyncAttentionBanner (redesigned 2026-07-28)
 
 The banner now has three tiers, only one visible at a time (highest priority wins):
@@ -247,6 +295,10 @@ These classes live in `styles/global.css` and are built entirely from the tokens
 | `.font-data` | Sets JetBrains Mono + `tabular-nums`. Required for every price, quantity, and total. |
 | `.tabular-nums` | Sets `font-variant-numeric: tabular-nums` on any element. |
 | `.sync-pulse-bar` | The signature 2px full-width line. States via `data-sync-state`. |
+| `.pos-kbd` / `.pos-kbd--solid` | The key drawn next to the control it drives, so a shortcut is never text in a paragraph nobody reads. `--solid` is the inverse for filled primary buttons. |
+| `.pos-editable` | A figure the cashier can change. Dotted rule drawn **at rest** (not on hover) — hover alone signals nothing on touch and nothing before the pointer arrives. Goes solid ink on hover/focus. |
+| `.pos-superseded` | Invoice notation for a replaced figure — the cart line's struck-through original. See "Signature Element — The Struck-Through Original". |
+| `.pos-divider` | The single hairline rule. Owned here so a `<hr>` never has to compose `border-0` + `border-t` utilities, whose equal-specificity order in the generated stylesheet is not something to rely on. |
 
 ---
 

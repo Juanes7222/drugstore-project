@@ -687,6 +687,215 @@ export async function fetchLocalCreditSalePayment(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Products
+// ---------------------------------------------------------------------------
+
+export interface LocalProduct {
+  id: string;
+  internalCode: string;
+  commercialName: string;
+  concentration: string | null;
+  concentrationUnit: string | null;
+  laboratory: string;
+  saleType: string;
+  minimumStock: number;
+  isActive: boolean;
+  invimaRegistry: string | null;
+  atcCode: string | null;
+  therapeuticIndication: string | null;
+  storageConditions: string | null;
+  internalNotes: string | null;
+  categoryId: string | null;
+  pharmaceuticalFormId: string | null;
+  commissionType: string;
+  commissionValue: number;
+  currentPrice: number | null;
+  currentCost: number | null;
+  currentTaxSchemeId: string | null;
+  barcodes: Array<{ barcode: string; barcodeType: string; isPrimary: boolean }>;
+}
+
+/**
+ * A product the POS holds locally, read at the width the server projection
+ * carries so a local-versus-server reconciliation compares like with like.
+ *
+ * `currentPrice` / `currentCost` follow the `currentPriceId` / `currentCostId`
+ * pointers rather than the newest history row: an update closes the previous
+ * row (`effectiveTo`) instead of mutating it, so the newest row by date is not
+ * necessarily the active one.
+ */
+export async function fetchLocalProduct(
+  commercialName: string,
+): Promise<LocalProduct | null> {
+  const rows = await queryLocal<{
+    id: string;
+    internalCode: string;
+    commercialName: string;
+    concentration: string | null;
+    concentrationUnit: string | null;
+    laboratory: string;
+    saleType: string;
+    minimumStock: number;
+    isActive: boolean;
+    invimaRegistry: string | null;
+    atcCode: string | null;
+    therapeuticIndication: string | null;
+    storageConditions: string | null;
+    internalNotes: string | null;
+    categoryId: string | null;
+    pharmaceuticalFormId: string | null;
+    commissionType: string;
+    commissionValue: string;
+    currentPrice: string | null;
+    currentCost: string | null;
+    currentTaxSchemeId: string | null;
+  }>(
+    `SELECT p.id, p."internalCode", p."commercialName", p.concentration,
+            p."concentrationUnit", p.laboratory, p."saleType", p."minimumStock",
+            p."isActive", p."invimaRegistry", p."atcCode",
+            p."therapeuticIndication", p."storageConditions", p."internalNotes",
+            p."categoryId", p."pharmaceuticalFormId", p."commissionType",
+            p."commissionValue",
+            ph.price  AS "currentPrice",
+            pch.cost  AS "currentCost",
+            pth."taxSchemeId" AS "currentTaxSchemeId"
+       FROM "Product" p
+       LEFT JOIN "ProductPriceHistory" ph ON ph.id = p."currentPriceId"
+       LEFT JOIN "ProductCostHistory" pch ON pch.id = p."currentCostId"
+       LEFT JOIN "ProductTaxHistory" pth ON pth.id = p."currentTaxHistoryId"
+      WHERE p."commercialName" = $1
+      LIMIT 1`,
+    [commercialName],
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    ...row,
+    commissionValue: Number(row.commissionValue),
+    currentPrice: row.currentPrice === null ? null : Number(row.currentPrice),
+    currentCost: row.currentCost === null ? null : Number(row.currentCost),
+    barcodes: await queryLocal<{
+      barcode: string;
+      barcodeType: string;
+      isPrimary: boolean;
+    }>(
+      'SELECT barcode, "barcodeType", "isPrimary" FROM "ProductBarcode" WHERE "productId" = $1 ORDER BY barcode',
+      [row.id],
+    ),
+  };
+}
+
+/**
+ * The active price of a product, i.e. the row `Product.currentPriceId` points at,
+ * with its history bookkeeping.
+ */
+export async function fetchLocalProductPrice(productId: string): Promise<{
+  price: number;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  changeReason: string | null;
+} | null> {
+  const rows = await queryLocal<{
+    price: string;
+    effectiveFrom: string | null;
+    effectiveTo: string | null;
+    changeReason: string | null;
+  }>(
+    `SELECT ph.price, ph."effectiveFrom", ph."effectiveTo", ph."changeReason"
+       FROM "Product" p
+       JOIN "ProductPriceHistory" ph ON ph.id = p."currentPriceId"
+      WHERE p.id = $1`,
+    [productId],
+  );
+  const row = rows[0];
+  return row
+    ? {
+        price: Number(row.price),
+        effectiveFrom: isoOrNull(row.effectiveFrom),
+        effectiveTo: isoOrNull(row.effectiveTo),
+        changeReason: row.changeReason,
+      }
+    : null;
+}
+
+// ---------------------------------------------------------------------------
+// Inventory adjustments
+// ---------------------------------------------------------------------------
+
+export interface LocalAdjustmentDocument {
+  id: string;
+  sequentialNumber: number;
+  state: string;
+  reason: string | null;
+  notes: string | null;
+  appliedAt: string | null;
+  movements: Array<{
+    lotId: string;
+    movementType: string;
+    quantity: number;
+    previousStock: number;
+    resultingStock: number;
+    reason: string | null;
+  }>;
+}
+
+/**
+ * Adjustment documents the POS holds locally, newest first.
+ *
+ * The movements are read at the same width as the server's projection: an
+ * adjustment whose stock landed locally but whose movement rows are missing
+ * breaks every pull-based reconciliation downstream, and a counts-only reader
+ * would show it as a success.
+ */
+export async function fetchLocalAdjustments(): Promise<
+  LocalAdjustmentDocument[]
+> {
+  const rows = await queryLocal<{
+    id: string;
+    sequentialNumber: string;
+    state: string;
+    reason: string | null;
+    notes: string | null;
+    appliedAt: string | null;
+  }>(
+    `SELECT id, "sequentialNumber", state, reason, notes, "appliedAt"
+       FROM "InventoryAdjustmentDocument"
+      ORDER BY "sequentialNumber" DESC`,
+  );
+
+  const docs: LocalAdjustmentDocument[] = [];
+  for (const row of rows) {
+    const movements = await queryLocal<{
+      lotId: string;
+      movementType: string;
+      quantity: number;
+      previousStock: number;
+      resultingStock: number;
+      reason: string | null;
+    }>(
+      `SELECT "lotId", "movementType", quantity, "previousStock",
+              "resultingStock", reason
+         FROM "InventoryMovement"
+        WHERE "adjustmentDocumentId" = $1
+        ORDER BY "createdAt"`,
+      [row.id],
+    );
+    docs.push({
+      id: row.id,
+      sequentialNumber: Number(row.sequentialNumber),
+      state: row.state,
+      reason: row.reason,
+      notes: row.notes,
+      appliedAt: isoOrNull(row.appliedAt),
+      movements,
+    });
+  }
+  return docs;
+}
+
 /**
  * Wipe the local database and wait for the app to boot again.
  *

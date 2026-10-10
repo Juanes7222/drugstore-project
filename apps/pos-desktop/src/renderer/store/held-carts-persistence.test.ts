@@ -29,6 +29,7 @@ const cartItemFixture = (overrides: Partial<CartItem> = {}): CartItem => ({
   lotExpirationDate: "2027-06-01",
   unitPriceCents: 500_000,
   overrideUnitPriceCents: null,
+  originalUnitPriceCents: null,
   discountPercentage: null,
   costCents: null,
   taxPercentage: 19,

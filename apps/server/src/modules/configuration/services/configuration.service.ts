@@ -5,8 +5,13 @@ import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { RoleType, User } from '@pharmacy/shared-types';
 import { SystemConfigValueSchema } from '../dto/system-config-value.schema';
 import { UpsertSystemConfigDto } from '../dto/upsert-system-config.dto';
+import { UpdatePosSalesSettingsDto } from '../dto/update-pos-sales-settings.schema';
 import { ConfigValueTypeMismatchException } from '../exceptions/config-value-type-mismatch.exception';
 import { ImmutableConfigFieldException } from '../exceptions/immutable-config-field.exception';
+
+/** `SystemConfig` keys backing the POS sales-settings tabs. */
+export const POS_DISCOUNT_LIMITS_KEY = 'POS_DISCOUNT_LIMITS';
+export const POS_SALES_CONFIG_KEY = 'POS_SALES_CONFIG';
 
 @Injectable()
 export class ConfigurationService {
@@ -110,6 +115,54 @@ export class ConfigurationService {
     if (!result.success) {
       throw new ConfigValueTypeMismatchException(valueType, key);
     }
+  }
+
+  /**
+   * Persist the POS sales-settings blocks so every workstation agrees on them.
+   *
+   * These two keys already existed and were already served by
+   * `GET /configuration/pos-settings`; what was missing was any way to write
+   * them. Until now the Ventas tab mutated only the local store, so a discount
+   * limit or price floor set at one terminal was invisible to every other one
+   * and was silently reverted by the next boot sync, which pulls these same
+   * keys and overwrites the local block.
+   *
+   * Only the blocks present in the payload are written, so a caller fixing one
+   * setting does not overwrite the other block with a partial view of it.
+   * Routing through `upsertByKey` keeps the module/valueType immutability rules
+   * and the `updatedById` attribution in one place instead of duplicating the
+   * upsert here.
+   */
+  async updatePosSalesSettings(
+    dto: UpdatePosSalesSettingsDto,
+    user: User,
+  ): Promise<UpdatePosSalesSettingsDto> {
+    const writes: Array<[string, unknown]> = [];
+    if (dto.discountLimits !== undefined) {
+      writes.push([POS_DISCOUNT_LIMITS_KEY, dto.discountLimits]);
+    }
+    if (dto.salesConfig !== undefined) {
+      writes.push([POS_SALES_CONFIG_KEY, dto.salesConfig]);
+    }
+
+    for (const [key, value] of writes) {
+      await this.upsertByKey(
+        key,
+        {
+          key,
+          // `SALES_POS` is the Prisma `SystemModule` member that backs this
+          // column. Note it is NOT shared-types' `SystemModule.SALES` — the two
+          // enums share a name and differ, and this one is a type assertion
+          // rather than a runtime lookup, exactly as `upsertByKey` itself does.
+          module: 'SALES_POS' as $Enums.SystemModule,
+          isSensitive: false,
+          configValue: { valueType: 'OBJECT', value },
+        } as UpsertSystemConfigDto,
+        user,
+      );
+    }
+
+    return dto;
   }
 
   /**

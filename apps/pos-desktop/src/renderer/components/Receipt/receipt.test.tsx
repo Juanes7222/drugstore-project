@@ -114,6 +114,7 @@ const cartItem = (): CartItem => ({
   lotExpirationDate: "2027-06-01",
   unitPriceCents: 620_000,
   overrideUnitPriceCents: null,
+  originalUnitPriceCents: null,
   discountPercentage: null,
   costCents: null,
   taxPercentage: 19,

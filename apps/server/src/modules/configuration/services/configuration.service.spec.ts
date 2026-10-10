@@ -175,4 +175,69 @@ describe('ConfigurationService', () => {
       ).rejects.toThrow(ConfigValueTypeMismatchException);
     });
   });
+
+  // ── updatePosSalesSettings ───────────────────────────────────────────
+
+  describe('updatePosSalesSettings', () => {
+    const ownerUser = { id: 'u-owner', role: RoleType.OWNER } as any;
+
+    const limits = {
+      cashier: { itemMaxPercent: 10, globalMaxPercent: 5 },
+      admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
+      inventoryAssistant: { itemMaxPercent: 15, globalMaxPercent: 10 },
+      accountant: { itemMaxPercent: 0, globalMaxPercent: 0 },
+      owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+      manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
+    };
+
+    const salesConfig = {
+      priceOverridePermissions: {
+        cashier: { allowed: false, requireReason: true },
+        manager: { allowed: true, requireReason: true },
+        inventoryAssistant: { allowed: false, requireReason: true },
+        accountant: { allowed: false, requireReason: true },
+      },
+      priceFloor: { enabled: true, type: 'COST' as const, minMarginPercent: 0 },
+      creditEnabled: true,
+      defaultCreditLimitCents: 25_000_000,
+    };
+
+    beforeEach(() => {
+      // No existing row, so the create branch runs.
+      (prisma.systemConfig.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.systemConfig.create as jest.Mock).mockResolvedValue({});
+    });
+
+    it('writes both keys scoped to the tenant when both blocks are supplied', async () => {
+      await service.updatePosSalesSettings(
+        { discountLimits: limits, salesConfig } as any,
+        ownerUser,
+      );
+
+      expect(prisma.systemConfig.create).toHaveBeenCalledTimes(2);
+
+      const keys = (prisma.systemConfig.create as jest.Mock).mock.calls.map(
+        (call) => call[0].data.key,
+      );
+      expect(keys).toEqual(
+        expect.arrayContaining(['POS_DISCOUNT_LIMITS', 'POS_SALES_CONFIG']),
+      );
+
+      for (const call of (prisma.systemConfig.create as jest.Mock).mock.calls) {
+        // Tenant scoping is what makes this global-per-pharmacy rather than
+        // global across the platform.
+        expect(call[0].data.subscriptionId).toBe('test-subscription-id');
+        expect(call[0].data.valueType).toBe('OBJECT');
+      }
+    });
+
+    it('writes only the block supplied, so a partial edit cannot blank the other', async () => {
+      await service.updatePosSalesSettings({ discountLimits: limits } as any, ownerUser);
+
+      expect(prisma.systemConfig.create).toHaveBeenCalledTimes(1);
+      expect((prisma.systemConfig.create as jest.Mock).mock.calls[0][0].data.key).toBe(
+        'POS_DISCOUNT_LIMITS',
+      );
+    });
+  });
 });

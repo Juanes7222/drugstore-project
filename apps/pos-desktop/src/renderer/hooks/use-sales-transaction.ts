@@ -134,6 +134,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
           lotExpirationDate: item.lotExpirationDate,
           unitPriceCents: item.unitPriceCents,
           overrideUnitPriceCents: null,
+          originalUnitPriceCents: item.unitPriceCents,
           discountPercentage: null,
           costCents: item.costCents,
           taxPercentage: item.taxPercentage,

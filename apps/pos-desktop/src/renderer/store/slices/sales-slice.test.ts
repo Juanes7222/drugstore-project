@@ -51,6 +51,7 @@ const baseItem = (overrides: Partial<CartItem> = {}): CartItem => ({
   taxPercentage: 19,
   quantity: 1,
   overrideUnitPriceCents: null,
+  originalUnitPriceCents: null,
   discountPercentage: null,
   costCents: null,
   commissionType: null,
@@ -575,7 +576,11 @@ describe("sales slice — undo stack", () => {
     state = salesSlice.reducer(state, addItem(baseItem({ id: "line-2" })));
 
     expect(state.undoStack).toHaveLength(2);
-    expect(state.undoStack.at(-1)).toEqual([baseItem({ id: "line-1" })]);
+    // `addItem` stamps the catalog price as the pre-override baseline, so the
+    // snapshot holds the reducer-written figure, not the fixture's null.
+    expect(state.undoStack.at(-1)).toEqual([
+      baseItem({ id: "line-1", originalUnitPriceCents: 500_000 }),
+    ]);
   });
 
   it("removeItem pushes an undo snapshot", () => {
@@ -652,7 +657,9 @@ describe("sales slice — undo stack", () => {
 
     state = salesSlice.reducer(state, undoLastChange());
 
-    expect(state.items).toEqual([baseItem({ id: "line-1" })]);
+    expect(state.items).toEqual([
+      baseItem({ id: "line-1", originalUnitPriceCents: 500_000 }),
+    ]);
     expect(state.selectedLineId).toBeNull();
   });
 
@@ -669,7 +676,13 @@ describe("sales slice — undo stack", () => {
 
     state = salesSlice.reducer(state, undoLastChange());
 
-    expect(state.items).toEqual([baseItem({ id: "line-1", quantity: 1 })]);
+    expect(state.items).toEqual([
+      baseItem({
+        id: "line-1",
+        quantity: 1,
+        originalUnitPriceCents: 500_000,
+      }),
+    ]);
   });
 
   it("undoLastChange restores a removed line", () => {
@@ -683,8 +696,8 @@ describe("sales slice — undo stack", () => {
     state = salesSlice.reducer(state, undoLastChange());
 
     expect(state.items).toEqual([
-      baseItem({ id: "line-1" }),
-      baseItem({ id: "line-2" }),
+      baseItem({ id: "line-1", originalUnitPriceCents: 500_000 }),
+      baseItem({ id: "line-2", originalUnitPriceCents: 500_000 }),
     ]);
   });
 
@@ -781,6 +794,113 @@ describe("sales slice — undo stack", () => {
   });
 });
 
+describe("sales slice — pre-override price snapshot", () => {
+  it("addItem captures the incoming catalog price as the pre-override baseline", () => {
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1", unitPriceCents: 320_000 })),
+    );
+
+    expect(state.items[0]?.originalUnitPriceCents).toBe(320_000);
+  });
+
+  it("the first override leaves the catalog price as the pre-override baseline", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1", unitPriceCents: 500_000 })),
+    );
+
+    state = salesSlice.reducer(
+      state,
+      updateItemPrice({ id: "line-1", unitPriceCents: 400_000 }),
+    );
+
+    expect(state.items[0]?.unitPriceCents).toBe(400_000);
+    expect(state.items[0]?.originalUnitPriceCents).toBe(500_000);
+  });
+
+  it("a second override keeps the baseline at the catalog price, not the intermediate one", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1", unitPriceCents: 500_000 })),
+    );
+    state = salesSlice.reducer(
+      state,
+      updateItemPrice({ id: "line-1", unitPriceCents: 400_000 }),
+    );
+
+    state = salesSlice.reducer(
+      state,
+      updateItemPrice({ id: "line-1", unitPriceCents: 300_000 }),
+    );
+
+    expect(state.items[0]?.unitPriceCents).toBe(300_000);
+    expect(state.items[0]?.originalUnitPriceCents).toBe(500_000);
+  });
+
+  it("a first override on a line with no baseline snapshots the live price", () => {
+    // A held cart persisted before the field existed rehydrates without it;
+    // the first override supplies the missing baseline rather than leaving
+    // the line un-strikeable.
+    const initial = salesSlice.getInitialState();
+    const legacy: typeof initial = { ...initial, items: [baseItem()] };
+
+    const next = salesSlice.reducer(
+      legacy,
+      updateItemPrice({ id: "line-1", unitPriceCents: 400_000 }),
+    );
+
+    expect(next.items[0]?.originalUnitPriceCents).toBe(500_000);
+  });
+
+  it("a first override on a line whose baseline is undefined snapshots the live price", () => {
+    // `undefined` (key absent from a rehydrated localStorage payload) is
+    // what the loose `== null` guard exists to catch.
+    const initial = salesSlice.getInitialState();
+    const legacy: typeof initial = {
+      ...initial,
+      items: [
+        {
+          ...baseItem(),
+          originalUnitPriceCents: undefined,
+        } as unknown as CartItem,
+      ],
+    };
+
+    const next = salesSlice.reducer(
+      legacy,
+      updateItemPrice({ id: "line-1", unitPriceCents: 400_000 }),
+    );
+
+    expect(next.items[0]?.originalUnitPriceCents).toBe(500_000);
+  });
+
+  it("addItem merging into an already-overridden line keeps the baseline", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1", unitPriceCents: 500_000 })),
+    );
+    state = salesSlice.reducer(
+      state,
+      updateItemPrice({ id: "line-1", unitPriceCents: 400_000 }),
+    );
+
+    // Scanning the same lot again must not re-strike the line against the
+    // catalog price — the override, not the catalog figure, is the charge.
+    state = salesSlice.reducer(
+      state,
+      addItem(
+        baseItem({ id: "line-1", unitPriceCents: 500_000, quantity: 2 }),
+      ),
+    );
+
+    expect(state.items).toHaveLength(1);
+    expect(state.items[0]?.quantity).toBe(3);
+    expect(state.items[0]?.unitPriceCents).toBe(400_000);
+    expect(state.items[0]?.originalUnitPriceCents).toBe(500_000);
+  });
+});
+
 describe("sales slice — held carts", () => {
   it("holdCart pushes a snapshot and resets the active cart", () => {
     let state = salesSlice.reducer(
@@ -799,7 +919,7 @@ describe("sales slice — held carts", () => {
       {
         id: "held-1",
         savedAt: 1_700_000_000_000,
-        items: [baseItem({ id: "line-1" })],
+        items: [baseItem({ id: "line-1", originalUnitPriceCents: 500_000 })],
         selectedClient: clientFixture(),
         delivery: deliveryDraft(),
       },
@@ -837,7 +957,11 @@ describe("sales slice — held carts", () => {
 
     expect(state.items[0]?.quantity).toBe(4);
     expect(state.heldCarts[0]?.items).toEqual([
-      baseItem({ id: "line-1", quantity: 1 }),
+      baseItem({
+        id: "line-1",
+        quantity: 1,
+        originalUnitPriceCents: 500_000,
+      }),
     ]);
   });
 
@@ -879,7 +1003,13 @@ describe("sales slice — held carts", () => {
 
     state = salesSlice.reducer(state, recallHeldCart());
 
-    expect(state.items).toEqual([baseItem({ id: "b", productId: "p-b" })]);
+    expect(state.items).toEqual([
+      baseItem({
+        id: "b",
+        productId: "p-b",
+        originalUnitPriceCents: 500_000,
+      }),
+    ]);
     expect(state.selectedClient).toEqual(clientFixture());
     expect(state.delivery).toEqual(deliveryDraft());
     expect(state.selectedLineId).toBeNull();
@@ -906,7 +1036,13 @@ describe("sales slice — held carts", () => {
 
     state = salesSlice.reducer(state, recallHeldCart("held-1"));
 
-    expect(state.items).toEqual([baseItem({ id: "a", productId: "p-a" })]);
+    expect(state.items).toEqual([
+      baseItem({
+        id: "a",
+        productId: "p-a",
+        originalUnitPriceCents: 500_000,
+      }),
+    ]);
     expect(state.heldCarts).toEqual([expect.objectContaining({ id: "held-2" })]);
   });
 

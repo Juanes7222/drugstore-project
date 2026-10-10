@@ -70,6 +70,21 @@ export interface PriceFloorConfig {
 export interface SalesConfig {
   priceOverridePermissions: PriceOverridePermissions;
   priceFloor: PriceFloorConfig;
+  /**
+   * Master switch for store credit.
+   *
+   * Was missing here while the POS modelled it all along: `applySalesConfigDefaults`
+   * rebuilt this object field by field, so anything not listed was silently
+   * dropped on every read. The POS therefore could never receive a
+   * server-configured value and always fell back to its local default of
+   * `false` — store credit was unreachable from configuration on any machine.
+   */
+  creditEnabled: boolean;
+  /**
+   * Default store-credit limit in COP cents, applied to clients whose own
+   * `creditLimit` is unset. 0 disables the default without turning credit off.
+   */
+  defaultCreditLimitCents: number;
 }
 
 /**

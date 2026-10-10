@@ -14,6 +14,7 @@ const mockConfigService = {
   findAll: jest.fn(),
   findByKey: jest.fn(),
   upsertByKey: jest.fn(),
+  updatePosSalesSettings: jest.fn(),
 };
 
 const mockPosSettingsService = {
@@ -110,6 +111,42 @@ describe('ConfigurationController (integration)', () => {
       configService.upsertByKey.mockRejectedValue(new Error('Immutable field'));
 
       await expect(controller.upsertByKey('APP_NAME', {} as any, mockUser as any)).rejects.toThrow('Immutable field');
+    });
+  });
+
+  describe('PUT /configuration/pos-settings/sales', () => {
+    // The role guard itself is exercised by the guard's own suite; what matters
+    // here is that this route hands off only the two sales blocks and never
+    // routes through the generic `upsertByKey`, whose ADMIN-only guard and
+    // arbitrary-key surface must stay closed to pharmacy owners.
+    const salesDto = {
+      discountLimits: {
+        cashier: { itemMaxPercent: 10, globalMaxPercent: 5 },
+        admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
+        inventoryAssistant: { itemMaxPercent: 15, globalMaxPercent: 10 },
+        accountant: { itemMaxPercent: 0, globalMaxPercent: 0 },
+        owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+        manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
+      },
+    };
+
+    it('persists through updatePosSalesSettings, not the generic key endpoint', async () => {
+      const owner = { id: 'owner-1', role: 'OWNER' };
+      configService.updatePosSalesSettings.mockResolvedValue(salesDto as any);
+
+      const result = await controller.updatePosSalesSettings(salesDto as any, owner as any);
+
+      expect(configService.updatePosSalesSettings).toHaveBeenCalledWith(salesDto, owner);
+      expect(configService.upsertByKey).not.toHaveBeenCalled();
+      expect(result).toEqual(salesDto);
+    });
+
+    it('propagates a rejected write instead of reporting success', async () => {
+      configService.updatePosSalesSettings.mockRejectedValue(new Error('Forbidden'));
+
+      await expect(
+        controller.updatePosSalesSettings(salesDto as any, mockUser as any),
+      ).rejects.toThrow('Forbidden');
     });
   });
 });

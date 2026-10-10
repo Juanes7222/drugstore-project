@@ -15,6 +15,10 @@ import type {
   PresetCode,
 } from './types';
 import { PRESET_LIST } from './presets';
+import type {
+  DiscountLimits,
+  SalesConfig,
+} from '../configuration/local-config.store';
 
 // ---------------------------------------------------------------------------
 // Config HTTP client interface
@@ -26,6 +30,22 @@ export interface ConfigHttpClient {
   post<T>(path: string, body?: unknown): Promise<T>;
   patch<T>(path: string, body?: unknown): Promise<T>;
   delete<T>(path: string): Promise<T>;
+}
+
+/**
+ * Body of `PUT /configuration/pos-settings/sales`.
+ *
+ * Both fields optional on purpose: a caller changing one setting must not
+ * overwrite the other block with a partial view of it. The server rejects a
+ * body with neither.
+ *
+ * Typed with the real store types rather than `Record<string, …>` so a rename
+ * or a field change in the configuration domain is a compile error here instead
+ * of a silent mismatch that only the server's Zod schema would catch.
+ */
+export interface PosSalesSettingsPayload {
+  discountLimits?: DiscountLimits;
+  salesConfig?: SalesConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +104,14 @@ export interface ConfigService {
     description?: string,
     isShared?: boolean,
   ): Promise<NamedPreset>;
+
+  /**
+   * Persist the sales-settings blocks so every workstation sees them.
+   *
+   * Rejects on failure — callers must not leave a local value that merely looks
+   * saved, because the next boot sync overwrites it from the server.
+   */
+  updateSalesSettings(payload: PosSalesSettingsPayload): Promise<void>;
 
   /** List saved named presets. */
   listNamedPresets(): Promise<NamedPreset[]>;
@@ -191,6 +219,18 @@ export function createConfigService(
       return client.post<TenantConfig>(
         `/tenant-config/rollback/${version}`,
       );
+    },
+
+    /**
+     * Persist the sales-settings blocks (discount limits, price-override
+     * permissions, price floor, store credit) to the server so they apply to
+     * every workstation instead of only this one.
+     *
+     * OWNER only, matching the rest of the configuration page. Throws on
+     * rejection — the caller must not treat a failed write as saved.
+     */
+    async updateSalesSettings(payload: PosSalesSettingsPayload): Promise<void> {
+      await client.put<void>('/configuration/pos-settings/sales', payload);
     },
 
     async saveAsNamedPreset(

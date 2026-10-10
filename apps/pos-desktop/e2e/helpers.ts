@@ -1518,7 +1518,12 @@ export async function openScreen(menuLabel: string): Promise<void> {
         `Screen: ${await describeScreen()}`,
     );
   }
-  await (await $(item)).click();
+  // Centre before clicking: the sidebar is a scrollable rail, and `waitVisible`
+  // accepts an item that is merely off-layout but scrolled out of view. Measured
+  // mid-suite, its "Ventas" entry sat at y=-259 with the viewport 900 tall.
+  const target = await $(item);
+  await target.scrollIntoView({ block: "center", inline: "center" });
+  await target.click();
 }
 
 /**
@@ -1762,11 +1767,35 @@ export async function setSwitch(id: string, desired: boolean): Promise<void> {
   throw new Error(`config switch #${id} never reached ${desired}`);
 }
 
-/** Open a tab of the tenant configuration page by its visible label. */
+/**
+ * Open a tab of the tenant configuration page by its visible label.
+ *
+ * `not(ancestor-or-self::*[@role="menuitem"])` excludes the SIDEBAR entry, and
+ * it is load-bearing rather than defensive. The sidebar carries the same
+ * labels as the config tabs — "Ventas", "Compras", "Clientes" all appear in
+ * both — so an unscoped match can resolve to the navigation item instead of the
+ * tab. `waitVisible` takes the FIRST ordered node, so whichever the sidebar
+ * contributes first wins. Clicking it navigates away (or fails outright as
+ * "element not interactable" when the sidebar is collapsed), which surfaced as
+ * a sales-config spec that could not reach the Ventas tab at all.
+ *
+ * `ancestor-or-self` rather than `ancestor` because the matched element IS the
+ * `role="menuitem"` for sidebar entries.
+ */
 export async function openConfigTab(label: string): Promise<void> {
-  const tab = `//nav[@aria-label="Empresa"]//button[normalize-space(.)="${label}"]`;
+  const tab =
+    `//nav[@aria-label="Empresa"]//button[normalize-space(.)="${label}"` +
+    ` and not(ancestor-or-self::*[@role="menuitem"])]`;
   await waitVisible(tab, 20, 1_000, `Config tab "${label}"`);
-  await (await $(tab)).click();
+  // Centre the target before clicking. `waitVisible` reports an element that is
+  // merely OCCUPYING layout space as visible, so a tab scrolled out of its
+  // container passes the wait and then fails the click with "element not
+  // interactable" / "move target out of bounds". Measured: after a few
+  // `scrollIntoView` calls elsewhere, the config tab bar sat at y=-58 — fully
+  // above the viewport. Same reason `clickButtonByExactText` centres its target.
+  const target = await $(tab);
+  await target.scrollIntoView({ block: "center", inline: "center" });
+  await target.click();
 }
 
 /** Assert a config tab finished mounting by its section heading. */

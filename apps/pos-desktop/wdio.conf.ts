@@ -150,6 +150,12 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
    *     reception is what gives Ibuprofeno a cost, which is the only thing that
    *     makes the price floor and the cost snapshot observable. Mocha runs a
    *     file's `it`s in declaration order, so they stay adjacent here.
+   *   - `inventory-products-flow` and `inventory-adjustments-flow` both create
+   *     their own products/documents rather than inheriting state, so they are
+   *     order-independent; they sit after purchases because the adjustment
+   *     specs' stock baselines are easier to reason about with the purchase
+   *     chain already settled, and both read the product rows the purchases
+   *     flow prices.
    *   - `lot-expiry-flow` sets and clears `requireLotOnReception` itself rather
    *     than depending on `tenant-config-flow`, so it is order-independent.
    *   - `users-flow` and `tenant-config-flow` sign in as OWNER, because every
@@ -158,13 +164,19 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
    *   - `sales-credit-flow` is order-independent: it snapshots the client's
    *     credit state itself and asserts the DELTA its sale causes, so it neither
    *     inherits nor leaks credit state. It sits with the other sales specs.
+   *   - `sales-config-flow` writes pharmacy-wide settings and restores each one
+   *     it changes, so it leaves `POS_DISCOUNT_LIMITS` / `POS_SALES_CONFIG`
+   *     as it found them.
    */
   specs: [
     "./e2e/sales-flow.e2e.ts",
     "./e2e/sales-pricing-flow.e2e.ts",
+    "./e2e/sales-config-flow.e2e.ts",
     "./e2e/sales-credit-flow.e2e.ts",
     "./e2e/returns-flow.e2e.ts",
     "./e2e/purchases-flow.e2e.ts",
+    "./e2e/inventory-products-flow.e2e.ts",
+    "./e2e/inventory-adjustments-flow.e2e.ts",
     "./e2e/clients-flow.e2e.ts",
     "./e2e/lot-expiry-flow.e2e.ts",
     "./e2e/users-flow.e2e.ts",

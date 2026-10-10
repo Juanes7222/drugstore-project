@@ -92,6 +92,8 @@ describe('PosSettingsService', () => {
           accountant: { allowed: false, requireReason: true },
         },
         priceFloor: { enabled: true, type: 'COST', minMarginPercent: 0 },
+        creditEnabled: true,
+        defaultCreditLimitCents: 25_000_000,
       };
 
       (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue(mockPaymentMethods);
@@ -108,6 +110,56 @@ describe('PosSettingsService', () => {
       expect(result.alertThresholds).toEqual(mockAlertThresholds);
       expect(result.syncDefaults).toEqual(mockSyncDefaults);
       expect(result.salesConfig).toEqual(mockSalesConfig);
+    });
+
+    it('carries the store-credit fields through instead of dropping them', async () => {
+      // Regression. `applySalesConfigDefaults` rebuilds the object field by
+      // field, so any field missing from that list was silently discarded on
+      // every read — the POS asked for `creditEnabled`, never received it, and
+      // fell back to its local `false`. Store credit was therefore impossible to
+      // switch on from configuration on any machine, however the value was set.
+      (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.systemConfig.findUnique as jest.Mock).mockResolvedValue({
+        value: {
+          priceOverridePermissions: {
+            cashier: { allowed: false, requireReason: true },
+            manager: { allowed: true, requireReason: true },
+            inventoryAssistant: { allowed: false, requireReason: true },
+            accountant: { allowed: false, requireReason: true },
+          },
+          priceFloor: { enabled: true, type: 'COST', minMarginPercent: 0 },
+          creditEnabled: true,
+          defaultCreditLimitCents: 25_000_000,
+        },
+      });
+
+      const result = await service.getPosSettings();
+
+      expect(result.salesConfig.creditEnabled).toBe(true);
+      expect(result.salesConfig.defaultCreditLimitCents).toBe(25_000_000);
+    });
+
+    it('rejects a nonsense stored default credit limit rather than passing it on', async () => {
+      // A negative or non-numeric limit reaching the POS would be applied to
+      // every client missing one, producing nonsense credit ceilings fleet-wide.
+      (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.systemConfig.findUnique as jest.Mock).mockResolvedValue({
+        value: {
+          priceOverridePermissions: {
+            cashier: { allowed: false, requireReason: true },
+            manager: { allowed: true, requireReason: true },
+            inventoryAssistant: { allowed: false, requireReason: true },
+            accountant: { allowed: false, requireReason: true },
+          },
+          priceFloor: { enabled: true, type: 'COST', minMarginPercent: 0 },
+          creditEnabled: true,
+          defaultCreditLimitCents: -5,
+        },
+      });
+
+      const result = await service.getPosSettings();
+
+      expect(result.salesConfig.defaultCreditLimitCents).toBe(0);
     });
 
     it('uses default values when configs are missing', async () => {

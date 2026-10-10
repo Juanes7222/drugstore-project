@@ -20,12 +20,13 @@
  *
  *   - **Compras** and **Operación** persist to `TenantConfig` + `ConfigChangelog`,
  *     so both the value and the audit trail are asserted.
- *   - **Ventas**' discount limits have NO server write path today: the POS reads
- *     them from `GET /configuration/pos-settings` and writes them straight to
- *     `localStorage.pharmacy_local_config`. For those the persisted store IS the
- *     database of record, and E2E-T05 asserts it there. (The server's
- *     `SystemConfig` does hold a `POS_DISCOUNT_LIMITS` key, and the mismatch is
- *     worth knowing about: limits set on one terminal do not reach another.)
+ *   - **Ventas** is NOT a `TenantConfig` tab. Its discount limits and sales
+ *     config live in `SystemConfig` and reach it through
+ *     `PUT /configuration/pos-settings/sales`, so E2E-T05 here asserts only that
+ *     the local store took the edit, and `sales-config-flow.e2e.ts` owns the
+ *     server-side assertion. Keeping the split explicit avoids the trap this
+ *     file already hit once: asserting "not on the server" read as proof the
+ *     setting was nowhere, when in fact it was simply the wrong table.
  */
 
 import { $, expect } from "@wdio/globals";

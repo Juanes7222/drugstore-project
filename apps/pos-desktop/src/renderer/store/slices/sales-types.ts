@@ -20,6 +20,13 @@ export interface CartItem {
   unitPriceCents: number;
   /** When non-null, the price was manually overridden at sale time. */
   overrideUnitPriceCents: number | null;
+  /**
+   * Catalog unit price in cents captured before the first manual override.
+   * Null while no override has happened. Survives repeated overrides so the
+   * UI can render the pre-override figure struck through, the way a fiscal
+   * document notates an amended line.
+   */
+  originalUnitPriceCents: number | null;
   /** Percentage discount applied to this line (0–100). Null = no explicit discount. */
   discountPercentage: number | null;
   /** Cost per unit in cents. Used for inline price-below-cost validation. */

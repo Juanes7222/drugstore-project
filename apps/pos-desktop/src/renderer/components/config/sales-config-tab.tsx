@@ -7,11 +7,16 @@
  * and floor blocks, and `hydrateFromServer` for `discountLimits` (the only
  * available write path for that block in the current store API).
  *
- * Persistence round-trip: the local Zustand store is the source of truth at
- * runtime. The pos-local sync service pulls a fresh snapshot from the server
- * on the next sync cycle, so any change made here will be visible after that
- * pull. There is no server push for `salesConfig` / `discountLimits` today;
- * that responsibility belongs to the pos-local agent.
+ * Persistence round-trip: the store is applied optimistically, then PUSHED to
+ * `PUT /configuration/pos-settings/sales` (OWNER only), which writes the
+ * `POS_DISCOUNT_LIMITS` and `POS_SALES_CONFIG` SystemConfig keys for the whole
+ * pharmacy.
+ *
+ * Previously there was no push at all: these blocks were workstation-local and
+ * were silently reverted by the next sync cycle, which pulls these same keys.
+ * A failed push now restores the previous values and raises an error rather
+ * than leaving a value on screen that looks saved but is not — the next boot
+ * would quietly discard it, which is the failure this tab used to have.
  *
  * Follows the section-header + card pattern of `purchases-config-tab.tsx`.
  *
@@ -23,6 +28,8 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircleIcon, CreditCardIcon, PercentIcon, ShieldIcon, TagIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { useClientsService } from "@/components/common/service-context";
+import { notify } from '@/utils/notify';
+import { useConfigService } from '../../../domain/config';
 import {
   useLocalConfigStore,
   DEFAULT_CREDIT_LIMIT_CENTS,
@@ -37,6 +44,15 @@ import {
  * clients, so typing the limit never triggers a flood of writes.
  */
 const CREDIT_BACKFILL_DEBOUNCE_MS = 600;
+
+/**
+ * Debounce before pushing the sales settings to the server.
+ *
+ * Same reasoning as the credit backfill, and it matters more here: every
+ * keystroke in a percentage field would otherwise be a write to shared,
+ * pharmacy-wide configuration that other workstations boot from.
+ */
+const SALES_SETTINGS_PUSH_DEBOUNCE_MS = 600;
 
 // ---------------------------------------------------------------------------
 // Section definitions
@@ -142,6 +158,7 @@ const ToggleSwitch: FC<{
 
 export const SalesConfigTab: FC = () => {
   const { t } = useTranslation();
+  const configService = useConfigService();
 
   // Subscribe to the slice of the store we care about. Reading via
   // useLocalConfigStore.subscribe keeps the component reactive to both the
@@ -209,6 +226,98 @@ export const SalesConfigTab: FC = () => {
 
   // ---- Mutations ----
 
+  // ---- Push to the server ----
+
+  /**
+   * Last state the server is known to hold.
+   *
+   * Kept as a ref rather than state: it is only read inside an async
+   * continuation, and re-rendering on every keystroke to track it would defeat
+   * the point. Seeded once from the store, then advanced only after a
+   * successful push — so a failed push restores the server's truth, not
+   * whatever the user happened to have typed a moment earlier.
+   */
+  const confirmedRef = useRef<{
+    discountLimits: DiscountLimits;
+    salesConfig: SalesConfig;
+  } | null>(null);
+
+  const pushTimer = useRef<number | null>(null);
+
+  if (confirmedRef.current === null) {
+    confirmedRef.current = {
+      discountLimits: useLocalConfigStore.getState().discountLimits,
+      salesConfig: useLocalConfigStore.getState().salesConfig,
+    };
+  }
+
+  const restoreConfirmed = useCallback(() => {
+    const confirmed = confirmedRef.current;
+    if (!confirmed) return;
+    useLocalConfigStore.getState().hydrateFromServer({
+      discountLimits: confirmed.discountLimits,
+      alertThresholds: useLocalConfigStore.getState().alertThresholds,
+      syncDefaults: useLocalConfigStore.getState().syncDefaults,
+      salesConfig: confirmed.salesConfig,
+      sellerInfo: useLocalConfigStore.getState().sellerInfo,
+      purchasesConfig: useLocalConfigStore.getState().purchasesConfig,
+    });
+  }, []);
+
+  const pushNow = useCallback(() => {
+    const current = useLocalConfigStore.getState();
+    const payload = {
+      discountLimits: current.discountLimits,
+      salesConfig: current.salesConfig,
+    };
+
+    void configService
+      .updateSalesSettings(payload)
+      .then(() => {
+        confirmedRef.current = payload;
+      })
+      .catch((err: unknown) => {
+        console.error('[SalesConfigTab] saving sales settings failed:', err);
+        // Put the server's value back on screen. Leaving the failed value
+        // would show a setting that was never stored anywhere and that the
+        // next sync pull silently reverts — the user would have no way to
+        // tell it did not save.
+        restoreConfirmed();
+        notify.error({ title: t('config.errors.save_failed') });
+      });
+  }, [configService, restoreConfirmed, t]);
+
+  const schedulePush = useCallback(() => {
+    if (pushTimer.current !== null) {
+      window.clearTimeout(pushTimer.current);
+    }
+    pushTimer.current = window.setTimeout(() => {
+      pushTimer.current = null;
+      pushNow();
+    }, SALES_SETTINGS_PUSH_DEBOUNCE_MS);
+  }, [pushNow]);
+
+  /**
+   * Flush a pending push when the tab goes away.
+   *
+   * Deliberately NOT cancelled: the tab unmounts every time the owner clicks
+   * away to another settings tab, and a discarded timer would silently drop the
+   * edit — the value would sit in the local store looking saved, reach no other
+   * workstation, and be reverted by the next boot pull. Firing on unmount
+   * closes that window; if the app is genuinely shutting down the request may
+   * not land, but nothing was previously queued to cover that case either.
+   */
+  useEffect(
+    () => () => {
+      if (pushTimer.current !== null) {
+        window.clearTimeout(pushTimer.current);
+        pushTimer.current = null;
+        pushNow();
+      }
+    },
+    [pushNow],
+  );
+
   const updateDiscountRoleLimit = useCallback(
     (
       role: DiscountLimitRole,
@@ -235,8 +344,9 @@ export const SalesConfigTab: FC = () => {
         sellerInfo: state.sellerInfo,
         purchasesConfig: state.purchasesConfig,
       });
+      schedulePush();
     },
-    [],
+    [schedulePush],
   );
 
   const updateOverride = useCallback(
@@ -255,8 +365,9 @@ export const SalesConfigTab: FC = () => {
           },
         },
       });
+      schedulePush();
     },
-    [],
+    [schedulePush],
   );
 
   const updateFloor = useCallback(
@@ -268,8 +379,9 @@ export const SalesConfigTab: FC = () => {
           ...partial,
         },
       });
+      schedulePush();
     },
-    [],
+    [schedulePush],
   );
 
   // ---- Render ----
@@ -349,12 +461,14 @@ export const SalesConfigTab: FC = () => {
                         ? DEFAULT_CREDIT_LIMIT_CENTS
                         : current.defaultCreditLimitCents,
                   });
+                  schedulePush();
                 }}
-                onDefaultLimitChange={(defaultCreditLimitCents) =>
+                onDefaultLimitChange={(defaultCreditLimitCents) => {
                   useLocalConfigStore.getState().updateSalesConfig({
                     defaultCreditLimitCents,
-                  })
-                }
+                  });
+                  schedulePush();
+                }}
               />
             )}
           </section>

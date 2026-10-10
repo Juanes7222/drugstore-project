@@ -22,6 +22,10 @@ import type {
   PosCertificateStatus,
   SellerInfoPayload,
   PosResolutionPayload,
+  DiscountLimits,
+  AlertThresholds,
+  SyncDefaults,
+  SalesConfig,
 } from '../dto/pos-settings-response.dto';
 
 @Injectable()
@@ -347,6 +351,8 @@ export class PosSettingsService {
         accountant: { allowed: false, requireReason: true },
       },
       priceFloor: { enabled: true, type: 'COST', minMarginPercent: 0 },
+      creditEnabled: false,
+      defaultCreditLimitCents: 0,
     };
 
     if (!raw) return safe;
@@ -395,63 +401,35 @@ export class PosSettingsService {
         minMarginPercent:
           rawFloor?.minMarginPercent ?? safe.priceFloor.minMarginPercent,
       },
+      creditEnabled: raw.creditEnabled ?? safe.creditEnabled,
+      defaultCreditLimitCents: this.sanitizeCreditLimitCents(
+        raw.defaultCreditLimitCents,
+        safe.defaultCreditLimitCents,
+      ),
     };
+  }
+
+  /**
+   * Coerce a stored default credit limit to a usable non-negative integer.
+   *
+   * `??` alone is not enough: a row written before this field existed, or by a
+   * client sending a non-number, can carry `null`, a string, or a negative
+   * value. Any of those reaching the POS as `defaultCreditLimitCents` would be
+   * multiplied by clients on enable and produce nonsense limits.
+   */
+  private sanitizeCreditLimitCents(
+    value: unknown,
+    fallback: number,
+  ): number {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+    return Math.floor(parsed);
   }
 }
 
 // ---------------------------------------------------------------------------
 // Internal types
 // ---------------------------------------------------------------------------
-
-interface RoleDiscountLimit {
-  itemMaxPercent: number;
-  globalMaxPercent: number;
-}
-
-interface DiscountLimits {
-  cashier: RoleDiscountLimit;
-  admin: RoleDiscountLimit;
-  inventoryAssistant: RoleDiscountLimit;
-  accountant: RoleDiscountLimit;
-  owner: RoleDiscountLimit;
-  manager: RoleDiscountLimit;
-}
-
-interface AlertThresholds {
-  expirationWarningDays: number;
-  lowStockAlertEnabled: boolean;
-}
-
-interface SyncDefaults {
-  batchSize?: number;
-  maxRetryAttempts?: number;
-  retryDelaysSeconds?: number[];
-}
-
-interface RolePriceOverride {
-  allowed: boolean;
-  requireReason: boolean;
-}
-
-interface PriceOverridePermissions {
-  cashier: RolePriceOverride;
-  manager: RolePriceOverride;
-  inventoryAssistant: RolePriceOverride;
-  accountant: RolePriceOverride;
-}
-
-type PriceFloorType = 'COST' | 'COST_PLUS_MARGIN';
-
-interface PriceFloorConfig {
-  enabled: boolean;
-  type: PriceFloorType;
-  minMarginPercent: number;
-}
-
-interface SalesConfig {
-  priceOverridePermissions: PriceOverridePermissions;
-  priceFloor: PriceFloorConfig;
-}
 
 interface PosPaymentMethod {
   id: string;

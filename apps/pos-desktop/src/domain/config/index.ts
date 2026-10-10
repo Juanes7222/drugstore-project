@@ -114,7 +114,11 @@ export {
   type TenantConfigState,
 } from './tenant-config.store';
 
-export { useTenantConfig, type UseTenantConfigResult } from './use-tenant-config';
+export {
+  useTenantConfig,
+  useConfigService,
+  type UseTenantConfigResult,
+} from './use-tenant-config';
 export { useUserPreferences, type UseUserPreferencesResult } from './use-user-preferences';
 export {
   useFieldRequirement,

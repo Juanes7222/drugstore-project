@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Put,
   Patch,
   Param,
   Body,
@@ -19,6 +20,10 @@ import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { UpsertSystemConfigSchema } from '../dto/system-config-value.schema';
+import {
+  UpdatePosSalesSettingsSchema,
+  type UpdatePosSalesSettingsDto,
+} from '../dto/update-pos-sales-settings.schema';
 import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
 
 @Controller('configuration')
@@ -43,6 +48,38 @@ export class ConfigurationController {
   @UseGuards(SyncAuthGuard)
   async getPosSettings(): Promise<unknown> {
     return this.posSettingsService.getPosSettings();
+  }
+
+  /**
+   * Persists the sales-settings blocks (discount limits, price-override
+   * permissions, price floor, store credit) so they are global to the pharmacy
+   * instead of per-workstation.
+   *
+   * OWNER only. Not ADMIN: ADMIN is the platform role and is refused by every
+   * pharmacy-scoped guard in this API (`/users`, `/tenant-config`), so exposing
+   * it here would make the platform operator the only actor able to set a
+   * pharmacy's discount policy. Not MANAGER either, so the change is
+   * deliberately narrower than the read surface.
+   *
+   * A dedicated route rather than `PATCH /configuration/:key` on purpose: that
+   * generic endpoint is ADMIN-guarded and takes an arbitrary key, so allowing
+   * OWNER on it would hand pharmacy owners write access to every configuration
+   * key in the system. This route accepts only these two blocks.
+   */
+  @Put('pos-settings/sales')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleType.OWNER)
+  @Auditable({
+    action: AuditAction.UPDATE,
+    module: SystemModule.CONFIG,
+    entityType: 'SystemConfig',
+  })
+  async updatePosSalesSettings(
+    @Body(new ZodValidationPipe(UpdatePosSalesSettingsSchema))
+    dto: UpdatePosSalesSettingsDto,
+    @CurrentUser() user: User,
+  ): Promise<UpdatePosSalesSettingsDto> {
+    return this.configurationService.updatePosSalesSettings(dto, user);
   }
 
   /**

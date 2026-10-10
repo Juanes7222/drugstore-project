@@ -1169,6 +1169,58 @@ export async function fetchServerCreditMethods(): Promise<
   );
 }
 
+// ---------------------------------------------------------------------------
+// SystemConfig (the POS sales-settings pair)
+// ---------------------------------------------------------------------------
+
+/** The `SystemConfig` keys the Ventas tab writes. */
+export const POS_DISCOUNT_LIMITS_KEY = "POS_DISCOUNT_LIMITS";
+export const POS_SALES_CONFIG_KEY = "POS_SALES_CONFIG";
+
+/**
+ * The raw stored value of a `SystemConfig` key, or null when it does not exist.
+ *
+ * Read raw, not through `GET /configuration/pos-settings`, on purpose: that
+ * endpoint substitutes safe defaults for anything missing, so a key that was
+ * never written is indistinguishable from one written with the defaults. These
+ * keys are only written by the new sales-settings endpoint, so "the row exists"
+ * is the assertion that the Ventas tab now reaches the server at all — which is
+ * exactly what it did not do before.
+ */
+export async function fetchServerSystemConfig<T = Record<string, unknown>>(
+  key: string,
+): Promise<T | null> {
+  const rows = await query<{ value: T }>(
+    `SELECT "value" FROM "SystemConfig" WHERE "key" = $1 LIMIT 1`,
+    [key],
+  );
+  return rows[0]?.value ?? null;
+}
+
+/** Wait until a `SystemConfig` key exists and satisfies `predicate`. */
+export async function waitForServerSystemConfig<T>(
+  key: string,
+  predicate: (value: T) => boolean,
+  describe: string,
+  timeoutMs = 60_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let last: T | null = null;
+
+  while (Date.now() < deadline) {
+    const value = await fetchServerSystemConfig<T>(key);
+    if (value && predicate(value)) return value;
+    last = value;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `SystemConfig ${key} never satisfied ${describe} within ${timeoutMs}ms ` +
+      `(last: ${last === null ? "no row" : JSON.stringify(last)}). ` +
+      `Queue: ${await describeSyncQueue()}`,
+  );
+}
+
 /** Wait until the server's copy of a client reports `isActive`. */
 export async function waitForServerClientActiveState(
   identificationNumber: string,
@@ -1384,7 +1436,19 @@ export async function waitForTenantConfigValue(
   );
 }
 
-/** Changelog rows the config page's saves produced, newest first. */
+function fetchServerSourceProductIdNames(
+  sourceProductId: string | undefined,
+): Promise<string[]> {
+  if (!sourceProductId) return Promise.resolve([]);
+  return query<{ commercialName: string }>(
+    'SELECT "commercialName" FROM "Product" WHERE "sourceProductId" = $1',
+    [sourceProductId],
+  ).then((rows) => rows.map((row) => row.commercialName));
+}
+
+/**
+ * Changelog rows the config page's saves produced, newest first.
+ */
 export async function fetchServerConfigChangelog(limit = 10): Promise<
   Array<{
     configVersion: number;
@@ -1406,4 +1470,338 @@ export async function fetchServerConfigChangelog(limit = 10): Promise<
       LIMIT $1`,
     [limit],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Products
+// ---------------------------------------------------------------------------
+
+export interface ServerProduct {
+  id: string;
+  internalCode: string;
+  commercialName: string;
+  concentration: string | null;
+  concentrationUnit: string | null;
+  laboratory: string;
+  saleType: string;
+  minimumStock: number;
+  isActive: boolean;
+  invimaRegistry: string | null;
+  atcCode: string | null;
+  therapeuticIndication: string | null;
+  storageConditions: string | null;
+  internalNotes: string | null;
+  categoryId: string | null;
+  pharmaceuticalFormId: string | null;
+  commissionType: string;
+  commissionValue: number;
+  currentPrice: number | null;
+  currentCost: number | null;
+  currentTaxSchemeId: string | null;
+  /** POS-local UUID the payload's metadata carried, for POS-created products. */
+  sourceProductId: string | null;
+  barcodes: Array<{ barcode: string; barcodeType: string; isPrimary: boolean }>;
+}
+
+/**
+ * Server-side Product by its current commercial name, OR by a previous name.
+ *
+ * A rename means the POS sends the update keyed by the LOCAL id in
+ * `metadata.productId`; the server's `handleProductUpdate` remaps it through
+ * `sourceProductId`, so the lookup by current name misses the already-renamed
+ * row. Looking up BOTH names keeps a rename spec reading the same product on
+ * both sides of the sync.
+ */
+export async function fetchServerProductByNames(
+  ...names: string[]
+): Promise<ServerProduct | null> {
+  if (names.length === 0)
+    throw new Error("fetchServerProductByNames needs a name");
+
+  const rows = await query<{
+    id: string;
+    internalCode: string;
+    commercialName: string;
+    concentration: string | null;
+    concentrationUnit: string | null;
+    laboratory: string;
+    saleType: string;
+    minimumStock: number;
+    isActive: boolean;
+    invimaRegistry: string | null;
+    atcCode: string | null;
+    therapeuticIndication: string | null;
+    storageConditions: string | null;
+    internalNotes: string | null;
+    categoryId: string | null;
+    pharmaceuticalFormId: string | null;
+    commissionType: string;
+    commissionValue: string;
+    currentPrice: string | null;
+    currentCost: string | null;
+    currentTaxSchemeId: string | null;
+    sourceProductId: string | null;
+  }>(
+    `SELECT p.id, p."internalCode", p."commercialName", p.concentration,
+            p."concentrationUnit", p.laboratory, p."saleType", p."minimumStock",
+            p."isActive", p."invimaRegistry", p."atcCode",
+            p."therapeuticIndication", p."storageConditions", p."internalNotes",
+            p."categoryId", p."pharmaceuticalFormId", p."commissionType",
+            p."commissionValue",
+            ph.price  AS "currentPrice",
+            (SELECT cost FROM "ProductCostHistory" WHERE id = p."currentCostId")
+                      AS "currentCost",
+            (SELECT "taxSchemeId" FROM "ProductTaxHistory" WHERE id = p."currentTaxHistoryId")
+                      AS "currentTaxSchemeId",
+            p."sourceProductId"
+       FROM "Product" p
+       LEFT JOIN "ProductPriceHistory" ph ON ph.id = p."currentPriceId"
+      WHERE p."commercialName" = ANY($1::text[])
+      LIMIT 1`,
+    [names],
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    ...row,
+    commissionValue: Number(row.commissionValue),
+    currentPrice: row.currentPrice === null ? null : Number(row.currentPrice),
+    currentCost: row.currentCost === null ? null : Number(row.currentCost),
+    barcodes: await query<{
+      barcode: string;
+      barcodeType: string;
+      isPrimary: boolean;
+    }>(
+      'SELECT barcode, "barcodeType", "isPrimary" FROM "ProductBarcode" WHERE "productId" = $1 ORDER BY barcode',
+      [row.id],
+    ),
+  };
+}
+
+/**
+ * Wait until the server holds a product named `commercialName` OR whose
+ * POS-local id it adopted as `sourceProductId`.
+ *
+ * PRODUCT_CREATION is dispatched synchronously on push, so the wait is about
+ * the round trip plus the push trigger, not a cron — but the local-versus-server
+ * id difference means the local id carries over via `sourceProductId` rather
+ * than the primary key, which is what this reader absorbs.
+ */
+export async function waitForServerProduct(
+  commercialName: string,
+  localProductId?: string,
+  timeoutMs = 90_000,
+): Promise<ServerProduct> {
+  const deadline = Date.now() + timeoutMs;
+  let last = "no product with that name";
+
+  while (Date.now() < deadline) {
+    const found = await fetchServerProductByNames(
+      ...new Set([
+        commercialName,
+        ...(await fetchServerSourceProductIdNames(localProductId)),
+      ]),
+    );
+    if (found) return found;
+
+    const queue = await fetchServerSyncOperations("PRODUCT_CREATION", 1);
+    if (queue[0]?.lastErrorMessage) last = queue[0].lastErrorMessage;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `product "${commercialName}" never reached the server within ${timeoutMs}ms (${last})`,
+  );
+}
+
+/**
+ * Wait until the server's copy of a product (matched by one of `names`)
+ * reports every value in `expected`.
+ *
+ * PRODUCT_UPDATE is dispatched synchronously too, but waiting per-field beats
+ * a single existence wait when a spec changed several fields in one edit.
+ * A rename means the caller must pass the union of old and new names, because
+ * the row is only reachable by the name it carries at any given poll.
+ */
+export async function waitForServerProductFields(
+  names: string[],
+  expected: Partial<Record<keyof ServerProduct, unknown>>,
+  timeoutMs = 90_000,
+): Promise<ServerProduct> {
+  if (names.length === 0)
+    throw new Error("waitForServerProductFields needs a name");
+
+  const deadline = Date.now() + timeoutMs;
+  let last = "no match";
+
+  while (Date.now() < deadline) {
+    const match = await fetchServerProductByNames(...names);
+
+    if (match) {
+      const mismatches: string[] = [];
+      for (const [key, value] of Object.entries(expected)) {
+        if (!deepEqual(match[key as keyof ServerProduct], value)) {
+          mismatches.push(
+            `${key}: server=${JSON.stringify(match[key as keyof ServerProduct])} ` +
+              `expected=${JSON.stringify(value)}`,
+          );
+        }
+      }
+      if (mismatches.length === 0) return match;
+      last = mismatches.join("; ");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `server product never reached the expected fields within ${timeoutMs}ms (${last})`,
+  );
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// ---------------------------------------------------------------------------
+// Inventory adjustments
+// ---------------------------------------------------------------------------
+
+export interface ServerAdjustmentDocument {
+  id: string;
+  sequentialNumber: number;
+  state: string;
+  reason: string | null;
+  notes: string | null;
+  appliedAt: string | null;
+  movements: Array<{
+    lotId: string;
+    movementType: string;
+    quantity: number;
+    previousStock: number;
+    resultingStock: number;
+    reason: string | null;
+  }>;
+}
+
+/**
+ * Adjustment documents the server holds, newest first, with movements.
+ *
+ * Includes the stock the movement left behind (`resultingStock`) and the LOT
+ * ITSELF at read time, so the assertion is about the server's own state rather
+ * than about the value the POS claims the replay produced.
+ */
+export async function fetchServerAdjustments(): Promise<
+  ServerAdjustmentDocument[]
+> {
+  const rows = await query<{
+    id: string;
+    sequentialNumber: string;
+    state: string;
+    reason: string | null;
+    notes: string | null;
+    appliedAt: Date | null;
+  }>(
+    `SELECT id, "sequentialNumber", state, reason, notes, "appliedAt"
+       FROM "InventoryAdjustmentDocument"
+      ORDER BY "sequentialNumber" DESC`,
+  );
+
+  const docs: ServerAdjustmentDocument[] = [];
+  for (const row of rows) {
+    const movements = await query<{
+      lotId: string;
+      movementType: string;
+      quantity: number;
+      previousStock: number;
+      resultingStock: number;
+      reason: string | null;
+    }>(
+      `SELECT "lotId", "movementType", quantity, "previousStock",
+              "resultingStock", reason
+         FROM "InventoryMovement"
+        WHERE "adjustmentDocumentId" = $1
+        ORDER BY "createdAt"`,
+      [row.id],
+    );
+    docs.push({
+      id: row.id,
+      sequentialNumber: Number(row.sequentialNumber),
+      state: row.state,
+      reason: row.reason,
+      notes: row.notes,
+      appliedAt: row.appliedAt ? row.appliedAt.toISOString() : null,
+      movements,
+    });
+  }
+  return docs;
+}
+
+/**
+ * Wait until at least one APPLIED adjustment reaches the server, with the
+ * server's own lot stocks.
+ *
+ * INVENTORY_ADJUSTMENT replays ONLY through the background cron, so the apply
+ * lands seconds after the local commit — this is the opposite of the sales
+ * push, whose Sale row arrives without a cron tick. The last-seen error text is
+ * included because a rejection is much more likely than silence here.
+ */
+export async function waitForServerAdjustment(
+  timeoutMs = 120_000,
+): Promise<ServerAdjustmentDocument> {
+  const deadline = Date.now() + timeoutMs;
+  let seen = "no adjustment document";
+
+  while (Date.now() < deadline) {
+    const docs = await fetchServerAdjustments();
+    const applied = docs.find((doc) => doc.state === "APPLIED");
+    if (applied) return applied;
+    seen = JSON.stringify(docs.map((d) => `#${d.sequentialNumber}=${d.state}`));
+
+    const queue = await fetchServerSyncOperations("INVENTORY_ADJUSTMENT", 1);
+    if (queue[0]?.lastErrorMessage) seen = queue[0].lastErrorMessage;
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `no APPLIED inventory adjustment reached the server within ${timeoutMs}ms (last: ${seen})`,
+  );
+}
+
+/**
+ * Current stock of every server lot for `productId`, keyed by batch number.
+ *
+ * The adjustment reader identifies the lot by BATCH number rather than by id:
+ * the POS references the lot the UI selected, which is the batch the cashier
+ * sees, so this is the join key that stays meaningfully comparable across
+ * stores.
+ */
+export async function fetchServerLotStocksByBatch(
+  productId: string,
+): Promise<Record<string, number>> {
+  const rows = await query<{ batchNumber: string; currentStock: number }>(
+    `SELECT "batchNumber", "currentStock" FROM "Lot" WHERE "productId" = $1`,
+    [productId],
+  );
+  const out: Record<string, number> = {};
+  for (const row of rows) out[row.batchNumber] = row.currentStock;
+  return out;
+}
+
+/**
+ * Ad-hoc read-only SQL against the server database, for the spec-local
+ * assertions that don't justify a named reader.
+ *
+ * Exposed because a product spec needs ONE table's history that no other
+ * flow looks at; that is not a reason to widen the shared interface with a
+ * single-purpose reader, and it keeps the "read-only observer" contract
+ * intact (the specs that use this only ever SELECT).
+ */
+export async function queryServerRaw<
+  T extends import("pg").QueryResultRow = import("pg").QueryResultRow,
+>(sql: string, params: unknown[] = []): Promise<T[]> {
+  return query<T>(sql, params);
 }

@@ -80,6 +80,20 @@ function createDefaultConfigService(): ConfigService {
 // Hook
 // ---------------------------------------------------------------------------
 
+/**
+ * A ConfigService bound to the live session token, for writes that are not part
+ * of the tenant-config aggregate.
+ *
+ * `useTenantConfig` returns tenant-config actions only, but the sales-settings
+ * blocks live under `/configuration/pos-settings/sales` and need the same
+ * authenticated client. Created once per component via `useMemo` so the token
+ * is read per request rather than captured at mount — a service built once at
+ * login would keep using the pre-refresh token.
+ */
+export function useConfigService(): ConfigService {
+  return useMemo(() => createDefaultConfigService(), []);
+}
+
 export interface UseTenantConfigResult {
   /** Raw tenant config from server. */
   config: TenantConfig | null;

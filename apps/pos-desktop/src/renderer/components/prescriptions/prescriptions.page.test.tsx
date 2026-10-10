@@ -46,6 +46,7 @@ const baseCartItem: CartItem = {
   taxPercentage: 19,
   quantity: 2,
   overrideUnitPriceCents: null,
+  originalUnitPriceCents: null,
   discountPercentage: null,
   costCents: null,
   commissionType: null,
