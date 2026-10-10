@@ -1,11 +1,20 @@
 /**
- * Cart panel: client selection, line items, totals, and checkout action.
+ * Cart panel: client selection, line items, the command rail, totals, and
+ * checkout action.
  *
- * Reads cart state from Redux and dispatches quantity/remove updates.
- * Integrates the ClientSelector for customer selection during a sale.
- * Respects tenant config for whether client is required/optional/hidden.
+ * Cart lines render as a list rather than a table — the arithmetic stack on
+ * each line prints what every column would have labelled, so the panel needs
+ * no column headers at all. Reads cart state from Redux and dispatches
+ * quantity/remove updates. Respects tenant config for client selection.
  */
-import { Fragment, type FC, useEffect, useRef } from "react";
+import {
+  Fragment,
+  type FC,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   discardHeldCart,
@@ -26,6 +35,7 @@ import {
 } from "@/store/slices/sales-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { ClientSelector } from "./client-selector";
+import { CartCommandRail } from "./cart-command-rail";
 import { CartLineItem } from "./cart-line-item";
 import { LineQuickEdit } from "./line-quick-edit";
 import { TotalsSummary } from "./totals-summary";
@@ -33,8 +43,16 @@ import { DeliveryToggle } from "./delivery-toggle";
 import type { LineQuickEdit as LineQuickEditState } from "../../hooks/use-sales-keyboard";
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
 import type { CreateClientInput } from "../../../domain/clients";
-import { InfoIcon, ShoppingBagIcon } from "@/components/ui/icons";
+import {
+  BarcodeIcon,
+  EnterIcon,
+  InfoIcon,
+  ShoppingBagIcon,
+} from "@/components/ui/icons";
 import type { MovementsTarget } from "./product-movements-context-action";
+
+/** How long the "nothing to repeat" notice stays up after a failed F7. */
+const REPEAT_NOTICE_MS = 3000;
 
 /**
  * Epoch ms → local "HH:mm" label for a held-cart recall button.
@@ -61,8 +79,17 @@ interface CartPanelProps {
   onQuickEditCommit?: () => void;
   onQuickEditCancel?: () => void;
   onQuickEditDone?: () => void;
+  /** F7 — replays the last confirmed sale; resolves false when there is none. */
+  onRepeatLastSale?: () => Promise<boolean>;
+  /** F8 — holds a non-empty cart, recalls the latest held cart when empty. */
+  onToggleHoldCart?: () => void;
+  /** Ctrl+Z — restores the cart to its previous state. */
+  onUndoLastChange?: () => void;
   /** Right-click on a cart line — parent opens the movement history menu. */
-  onMovementsContext?: (target: MovementsTarget, position: { x: number; y: number }) => void;
+  onMovementsContext?: (
+    target: MovementsTarget,
+    position: { x: number; y: number },
+  ) => void;
 }
 
 export const CartPanel: FC<CartPanelProps> = ({
@@ -78,12 +105,17 @@ export const CartPanel: FC<CartPanelProps> = ({
   onQuickEditCommit = () => {},
   onQuickEditCancel = () => {},
   onQuickEditDone = () => {},
+  onRepeatLastSale = async () => false,
+  onToggleHoldCart = () => {},
+  onUndoLastChange = () => {},
   onMovementsContext = () => {},
 }: CartPanelProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const sectionRef = useRef<HTMLElement>(null);
   const checkoutButtonRef = useRef<HTMLButtonElement>(null);
+  const [repeatUnavailable, setRepeatUnavailable] = useState(false);
+  const repeatNoticeTimer = useRef<number | null>(null);
 
   // Zone activation (Enter from the zone-navigation loop): jump straight
   // to the money action — the checkout button — so Enter twice confirms.
@@ -96,6 +128,14 @@ export const CartPanel: FC<CartPanelProps> = ({
     section.addEventListener("zone-activate", handleZoneActivate);
     return () =>
       section.removeEventListener("zone-activate", handleZoneActivate);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (repeatNoticeTimer.current !== null) {
+        window.clearTimeout(repeatNoticeTimer.current);
+      }
+    };
   }, []);
 
   const items = useAppSelector(selectCartItems);
@@ -128,6 +168,22 @@ export const CartPanel: FC<CartPanelProps> = ({
     dispatch(updateItemDiscount({ id, discountPercentage }));
   };
 
+  const handleRepeat = useCallback(async () => {
+    const repeated = await onRepeatLastSale();
+    if (repeated) {
+      setRepeatUnavailable(false);
+      return;
+    }
+    setRepeatUnavailable(true);
+    if (repeatNoticeTimer.current !== null) {
+      window.clearTimeout(repeatNoticeTimer.current);
+    }
+    repeatNoticeTimer.current = window.setTimeout(
+      () => setRepeatUnavailable(false),
+      REPEAT_NOTICE_MS,
+    );
+  }, [onRepeatLastSale]);
+
   /**
    * Unique taxPercentage across all cart items.
    * null when items have mixed rates (e.g. one exempt 0%, another 19%).
@@ -157,13 +213,7 @@ export const CartPanel: FC<CartPanelProps> = ({
       />
 
       {/* Divider after client */}
-      <div
-        className="mb-pos-md mt-pos-sm"
-        style={{
-          borderTop: "1px solid",
-          borderColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
-        }}
-      />
+      <hr className="pos-divider my-pos-sm" />
 
       {/* Cart header with item count */}
       <h2
@@ -172,29 +222,9 @@ export const CartPanel: FC<CartPanelProps> = ({
       >
         {t("sales.cart.title_with_count", { count })}
       </h2>
-      <p
-        className="mt-pos-xs text-caption"
-        style={{ color: "color-mix(in srgb, var(--color-ink) 45%, transparent)" }}
-      >
-        {t("sales.cart.keyboard_hint")}
-      </p>
 
-      {/* Subtle reminder that carts are set aside while this one is active */}
-      {!isEmpty && heldCarts.length > 0 && (
-        <span
-          className="mt-pos-xs inline-flex w-fit items-center rounded-pos border px-pos-sm py-0.5 text-caption"
-          style={{
-            borderColor: "color-mix(in srgb, var(--color-ink) 12%, transparent)",
-            color: "color-mix(in srgb, var(--color-ink) 45%, transparent)",
-          }}
-        >
-          {t("sales.cart.hold_hint")}
-        </span>
-      )}
-
-      {/* Cart items area — scrollable (both axes so the 6-column table
-          never crushes its columns on narrow panels) */}
-      <div className="mt-pos-sm min-h-0 flex-1 overflow-auto px-pos-sm py-pos-sm">
+      {/* Cart lines — scrollable */}
+      <div className="mt-pos-sm min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {isEmpty ? (
           heldCarts.length > 0 ? (
             /* Held carts take visual priority over the generic empty hint */
@@ -210,7 +240,8 @@ export const CartPanel: FC<CartPanelProps> = ({
               <p
                 className="text-caption"
                 style={{
-                  color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                  color:
+                    "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                 }}
               >
                 {t("sales.cart.held_carts", { count: heldCarts.length })}
@@ -219,10 +250,7 @@ export const CartPanel: FC<CartPanelProps> = ({
                 {heldCarts.map((held) => {
                   const time = formatHeldTime(held.savedAt);
                   return (
-                    <li
-                      key={held.id}
-                      className="flex items-center gap-pos-xs"
-                    >
+                    <li key={held.id} className="flex items-center gap-pos-xs">
                       <button
                         type="button"
                         onClick={() => dispatch(recallHeldCart(held.id))}
@@ -237,7 +265,8 @@ export const CartPanel: FC<CartPanelProps> = ({
                         aria-label={t("sales.cart.held_cart_discard", { time })}
                         className="cursor-pointer border-none bg-transparent p-1 text-caption leading-none"
                         style={{
-                          color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
+                          color:
+                            "color-mix(in srgb, var(--color-ink) 40%, transparent)",
                         }}
                       >
                         ×
@@ -248,79 +277,102 @@ export const CartPanel: FC<CartPanelProps> = ({
               </ul>
             </div>
           ) : (
-          <div className="mt-pos-md">
-            <p
-              className="text-body"
-              style={{
-                color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-              }}
-            >
-              {t("sales.cart.empty")}
-            </p>
-            <p
-              className="mt-pos-xs text-caption"
-              style={{
-                color: "color-mix(in srgb, var(--color-ink) 35%, transparent)",
-              }}
-            >
-              {t("sales.cart.empty_hint")}
-            </p>
-          </div>
+            /* An empty cart is an invitation: name both ways to start one,
+               with the key each one uses drawn next to it. */
+            <div className="mt-pos-lg">
+              <p
+                className="text-body"
+                style={{
+                  color:
+                    "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                }}
+              >
+                {t("sales.cart.empty")}
+              </p>
+              <p
+                className="mt-pos-sm text-caption font-semibold uppercase"
+                style={{
+                  letterSpacing: "0.04em",
+                  color:
+                    "color-mix(in srgb, var(--color-ink) 45%, transparent)",
+                }}
+              >
+                {t("sales.cart.empty_ways")}
+              </p>
+              <ul className="mt-pos-sm space-y-pos-sm">
+                <li className="flex items-center gap-pos-sm">
+                  <span
+                    className="flex h-6 w-9 shrink-0 items-center justify-center rounded-pos border"
+                    style={{
+                      borderColor:
+                        "color-mix(in srgb, var(--color-ink) 20%, transparent)",
+                      color: "var(--color-ink)",
+                    }}
+                    aria-hidden="true"
+                  >
+                    <BarcodeIcon size={14} />
+                  </span>
+                  <span
+                    className="text-body-sm"
+                    style={{ color: "var(--color-ink)" }}
+                  >
+                    {t("sales.cart.empty_way_scan")}
+                  </span>
+                </li>
+                <li className="flex items-center gap-pos-sm">
+                  <span
+                    className="flex h-6 w-9 shrink-0 items-center justify-center"
+                    aria-hidden="true"
+                  >
+                    <EnterIcon size={14} />
+                  </span>
+                  <span
+                    className="text-body-sm"
+                    style={{ color: "var(--color-ink)" }}
+                  >
+                    {t("sales.cart.empty_way_type")}
+                  </span>
+                </li>
+              </ul>
+            </div>
           )
         ) : (
-          <table className="w-full min-w-[34rem] border-collapse">
-            <thead className="sr-only">
-              <tr>
-                <th>{t("sales.cart.title")}</th>
-                <th>{t("sales.product.stock")}</th>
-                <th>{t("sales.product.price")}</th>
-                <th>{t("sales.cart.discount")}</th>
-                <th>{t("sales.cart.total")}</th>
-                <th>{t("common.remove")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => {
-                const activeEdit =
-                  quickEdit?.lineId === item.id ? quickEdit : null;
-                return (
-                  <Fragment key={item.id}>
-                    <CartLineItem
-                      item={item}
-                      isSelected={selectedLineId === item.id}
-                      onUpdateQuantity={handleUpdateQuantity}
-                      onRemove={handleRemove}
-                      onUpdatePrice={handleUpdatePrice}
-                      onUpdateDiscount={handleUpdateDiscount}
-                      onMovementsContext={onMovementsContext}
-                    />
-                    {activeEdit && (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="p-0"
-                          style={{
-                            backgroundColor:
-                              "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
-                          }}
-                        >
-                          <div className="py-pos-sm pr-pos-md">
-                            <LineQuickEdit
-                              quickEdit={activeEdit}
-                              onDraftChange={onQuickEditDraftChange}
-                              onCommit={onQuickEditCommit}
-                              onCancel={onQuickEditCancel}
-                              onDone={onQuickEditDone}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
+          <ul className="flex flex-col">
+            {items.map((item) => {
+              const activeEdit =
+                quickEdit?.lineId === item.id ? quickEdit : null;
+              return (
+                <Fragment key={item.id}>
+                  <CartLineItem
+                    item={item}
+                    isSelected={selectedLineId === item.id}
+                    onUpdateQuantity={handleUpdateQuantity}
+                    onRemove={handleRemove}
+                    onUpdatePrice={handleUpdatePrice}
+                    onUpdateDiscount={handleUpdateDiscount}
+                    onMovementsContext={onMovementsContext}
+                  />
+                  {activeEdit && (
+                    <li
+                      className="border-b border-l-4 border-pharma/60 px-pos-md py-pos-sm"
+                      style={{
+                        backgroundColor:
+                          "color-mix(in srgb, var(--color-pharma) 8%, transparent)",
+                      }}
+                    >
+                      <LineQuickEdit
+                        quickEdit={activeEdit}
+                        onDraftChange={onQuickEditDraftChange}
+                        onCommit={onQuickEditCommit}
+                        onCancel={onQuickEditCancel}
+                        onDone={onQuickEditDone}
+                      />
+                    </li>
+                  )}
+                </Fragment>
+              );
+            })}
+          </ul>
         )}
       </div>
 
@@ -349,19 +401,35 @@ export const CartPanel: FC<CartPanelProps> = ({
         </div>
       )}
 
+      {/* Nothing to repeat: the F7 button's own outcome, since the key path
+          flashes the scan ring instead and a button cannot reach it. */}
+      {repeatUnavailable && (
+        <p
+          role="status"
+          className="mt-pos-sm text-caption"
+          style={{
+            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+          }}
+        >
+          {t("sales.cart.command_repeat_unavailable")}
+        </p>
+      )}
+
       {/* Domicilio (delivery) control — optional, tenant-policy aware */}
       {!isEmpty && <DeliveryToggle />}
 
       {/* Totals & checkout — always at bottom */}
       {!isEmpty && (
         <>
-          <TotalsSummary
-            subtotalCents={subtotal}
-            taxCents={tax}
-            totalCents={grandTotal}
-            uniqueRate={uniqueRate}
-            deliveryFeeCents={deliveryFee}
-          />
+          <div className="mt-pos-md">
+            <TotalsSummary
+              subtotalCents={subtotal}
+              taxCents={tax}
+              totalCents={grandTotal}
+              uniqueRate={uniqueRate}
+              deliveryFeeCents={deliveryFee}
+            />
+          </div>
 
           <button
             type="button"
@@ -373,19 +441,25 @@ export const CartPanel: FC<CartPanelProps> = ({
             <span className="flex items-center justify-center gap-2">
               <ShoppingBagIcon size={18} />
               {isCreating ? t("common.processing") : t("sales.cart.checkout")}
-              <kbd
-                className="rounded border px-1.5 py-0.5 font-mono text-caption-xs leading-none"
-                style={{
-                  borderColor: "color-mix(in srgb, white 35%, transparent)",
-                  color: "color-mix(in srgb, white 80%, transparent)",
-                }}
-              >
+              <kbd className="pos-kbd pos-kbd--solid" aria-hidden="true">
                 F9
               </kbd>
             </span>
           </button>
         </>
       )}
+
+      {/* Command rail — always reachable, empty cart or not */}
+      <CartCommandRail
+        onRepeat={() => {
+          void handleRepeat();
+        }}
+        onHold={onToggleHoldCart}
+        onUndo={onUndoLastChange}
+        hasItems={!isEmpty}
+        canHold={!isEmpty || heldCarts.length > 0}
+        disabled={isCreating}
+      />
     </section>
   );
 };

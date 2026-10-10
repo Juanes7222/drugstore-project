@@ -1,13 +1,20 @@
 /**
- * Single cart line item with quantity controls, inline price override,
- * discount editing, and safety badges.
+ * One cart line as a ledger entry: identity on the left, an arithmetic stack
+ * on the right that prints the meaning of every figure (`2 × $12.400`,
+ * `−10% −$2.480`) so the row needs no column headers.
  *
- * Prices and quantities use the data/mono face with tabular figures so the
- * cart stays readable and aligned when amounts have different digit counts.
+ * A line whose price or discount departs from the catalog is *amended*. An
+ * overridden price keeps its catalog figure in the column, struck through the
+ * way a fiscal document notates a superseded amount — still legible, still in
+ * force as history, no longer the charge. A discount alone amends a line
+ * without a strike, because the unit price itself was never touched.
+ * Either way the change is legible from structure and ink weight alone, never
+ * from colour.
  */
 import { type FC, useState, useRef, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { CartItem } from "@/store/slices/sales-types";
+import { computeCartItemMoney } from "@/store/slices/cart-money";
 import { isNearExpiry } from "@/services/catalog-service";
 import { formatCurrency } from "@/utils/format-currency";
 import { formatShortDate } from "@/utils/format-date";
@@ -24,8 +31,21 @@ interface CartLineItemProps {
   onUpdatePrice: (id: string, unitPriceCents: number) => void;
   onUpdateDiscount: (id: string, discountPercentage: number | null) => void;
   /** Right-click on the line — parent opens the movement history menu. */
-  onMovementsContext?: (target: MovementsTarget, position: { x: number; y: number }) => void;
+  onMovementsContext?: (
+    target: MovementsTarget,
+    position: { x: number; y: number },
+  ) => void;
 }
+
+const PRICE_OVERRIDE_ROLES = new Set([
+  "OWNER",
+  "MANAGER",
+  "ADMIN",
+  "SAAS_ADMIN",
+]);
+
+const MUTED_INK = "color-mix(in srgb, var(--color-ink) 50%, transparent)";
+const FAINT_INK = "color-mix(in srgb, var(--color-ink) 35%, transparent)";
 
 export const CartLineItem: FC<CartLineItemProps> = ({
   item,
@@ -38,17 +58,34 @@ export const CartLineItem: FC<CartLineItemProps> = ({
 }) => {
   const { t } = useTranslation();
   const session = useLocalSessionStore((s) => s.session);
-  const canOverridePrice =
-    session?.role === "OWNER" ||
-    session?.role === "MANAGER" ||
-    session?.role === "ADMIN" ||
-    session?.role === "SAAS_ADMIN";
+  const canOverridePrice = PRICE_OVERRIDE_ROLES.has(session?.role ?? "");
 
-  const effectivePrice = item.discountPercentage
-    ? Math.round(item.unitPriceCents * (1 - item.discountPercentage / 100))
-    : item.unitPriceCents;
-  const lineTotal = effectivePrice * item.quantity;
+  const { lineTotalCents } = computeCartItemMoney(item);
   const nearExpiry = isNearExpiry(item.lotExpirationDate);
+
+  // The discounted figure the invoice actually charged, derived from the
+  // line total — never a second rounding of a discounted unit price.
+  const grossLineCents = item.unitPriceCents * item.quantity;
+  const discountCents = grossLineCents - lineTotalCents;
+  const hasDiscount =
+    item.discountPercentage !== null && item.discountPercentage > 0;
+
+  /* The catalog price worth striking, or null when there is nothing to strike.
+     The `typeof` check is the guard that matters: held carts persisted before
+     this field existed rehydrate from localStorage with the key absent, and
+     `undefined !== null` would happily pass a null-only check and print
+     `$ NaN`. A missing baseline, or one equal to the live price (the override
+     was typed back to catalog), renders nothing rather than a bogus mark. */
+  const supersededPriceCents =
+    typeof item.originalUnitPriceCents === "number" &&
+    item.originalUnitPriceCents !== item.unitPriceCents
+      ? item.originalUnitPriceCents
+      : null;
+
+  const isAmended =
+    item.overrideUnitPriceCents !== null ||
+    supersededPriceCents !== null ||
+    hasDiscount;
 
   /* ── price inline edit with cost-floor validation ── */
   const [editingPrice, setEditingPrice] = useState(false);
@@ -98,20 +135,15 @@ export const CartLineItem: FC<CartLineItemProps> = ({
     setPriceError(null);
   }, [priceDraft, item.id, item.unitPriceCents, onUpdatePrice, validatePrice]);
 
-  const cancelPrice = useCallback(() => {
-    setEditingPrice(false);
-    setPriceError(null);
-  }, []);
-
   const handlePriceKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        commitPrice();
-      } else if (e.key === "Escape") {
-        cancelPrice();
+      if (e.key === "Enter") commitPrice();
+      else if (e.key === "Escape") {
+        setEditingPrice(false);
+        setPriceError(null);
       }
     },
-    [commitPrice, cancelPrice],
+    [commitPrice],
   );
 
   /* ── discount inline edit ── */
@@ -139,19 +171,12 @@ export const CartLineItem: FC<CartLineItemProps> = ({
     setEditingDiscount(false);
   }, [discountDraft, item.id, onUpdateDiscount]);
 
-  const cancelDiscount = useCallback(() => {
-    setEditingDiscount(false);
-  }, []);
-
   const handleDiscountKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        commitDiscount();
-      } else if (e.key === "Escape") {
-        cancelDiscount();
-      }
+      if (e.key === "Enter") commitDiscount();
+      else if (e.key === "Escape") setEditingDiscount(false);
     },
-    [commitDiscount, cancelDiscount],
+    [commitDiscount],
   );
 
   /* auto-focus when edit inputs appear */
@@ -181,176 +206,254 @@ export const CartLineItem: FC<CartLineItemProps> = ({
   );
 
   return (
-    <tr
-      className="border-b border-ink/10"
+    <li
+      className="border-b border-l-4 px-pos-md py-pos-sm"
+      data-selected={isSelected}
+      data-amended={isAmended}
+      aria-current={isSelected ? "true" : undefined}
       onContextMenu={handleContextMenu}
       style={{
-        borderBottomColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
-        ...(isSelected
-          ? {
-              backgroundColor:
-                "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
-              boxShadow: "inset 3px 0 0 var(--color-pharma)",
-            }
-          : {}),
+        borderBottomColor:
+          "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+        // Selection wins over amendment — the row that takes the next
+        // keystroke must never be in doubt.
+        borderLeftColor: isSelected
+          ? "var(--color-pharma)"
+          : isAmended
+            ? "var(--color-ink)"
+            : "transparent",
+        backgroundColor: isSelected
+          ? "color-mix(in srgb, var(--color-pharma) 8%, transparent)"
+          : "transparent",
       }}
     >
-      <td className="py-pos-sm pl-pos-md pr-pos-md align-top">
-        <p className="text-body font-semibold" style={{ color: "var(--color-ink)" }}>
-          {item.name}
-        </p>
-        <p
-          className="text-caption"
-          style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}
-        >
-          {t("sales.product.lot")}: {item.lotCode} — {t("sales.product.expires")}:{" "}
-          {formatShortDate(item.lotExpirationDate)}
-        </p>
-        <div className="mt-pos-xs flex flex-wrap gap-pos-xs">
-          <CommissionBadge
-            commissionType={item.commissionType}
-            commissionValue={item.commissionValue}
-            commissionStartsAt={item.commissionStartsAt}
-            commissionEndsAt={item.commissionEndsAt}
-          />
-          {nearExpiry && (
-            <span className="pos-badge pos-badge-urgency">
-              {t("sales.product.near_expiry")}
-            </span>
-          )}
-          {item.isRestricted && (
-            <span className="pos-badge pos-badge-restrict">
-              {t("sales.product.restricted")}
-            </span>
-          )}
-        </div>
-      </td>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-pos-md">
+        {/* ── identity ── */}
+        <div className="min-w-0">
+          <div className="flex items-start gap-pos-sm">
+            <p
+              className="min-w-0 flex-1 text-body font-semibold"
+              style={{ color: "var(--color-ink)" }}
+            >
+              {item.name}
+            </p>
+            <button
+              type="button"
+              onClick={() => onRemove(item.id)}
+              className="pos-button pos-button-secondary h-6 w-6 shrink-0 p-0 text-caption"
+              aria-label={t("common.remove")}
+            >
+              ×
+            </button>
+          </div>
 
-      <td className="py-pos-sm px-pos-md align-top text-right">
-        <div className="flex items-center justify-end gap-pos-xs">
-          <button
-            type="button"
-            onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
-            className="pos-button pos-button-secondary h-6 w-6 p-0"
-            aria-label={t("common.remove")}
-          >
-            −
-          </button>
-          <span className="font-data text-body w-6 text-center tabular-nums">
-            {item.quantity}
-          </span>
-          <button
-            type="button"
-            onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
-            className="pos-button pos-button-secondary h-6 w-6 p-0"
-            aria-label={t("common.add")}
-          >
-            +
-          </button>
-        </div>
-      </td>
-
-      {/* Unit price column — editable when role permits */}
-      <td className="py-pos-sm px-pos-md align-top text-right">
-        {editingPrice ? (
-          <div className="flex flex-col items-end gap-pos-xs">
-            <input
-              ref={priceRef}
-              type="number"
-              className={`pos-input w-28 text-right tabular-nums ${
-                priceError ? "border-red-500" : ""
-              }`}
-              value={priceDraft}
-              onChange={(e) => {
-                setPriceDraft(e.target.value);
-                if (priceError) setPriceError(null);
-              }}
-              onBlur={commitPrice}
-              onKeyDown={handlePriceKeyDown}
-              min={0}
-              step={1}
-              aria-label={t("sales.cart.editPrice")}
-              aria-invalid={!!priceError}
-            />
-            {priceError && (
-              <p
-                className="text-caption leading-tight max-w-40 text-right"
-                style={{ color: "var(--color-danger)" }}
-                role="alert"
-              >
-                {priceError}
-              </p>
+          {/* Quantity stepper sits with the product name — the most-used
+              control on the line — and carries the `0-9` shortcut only
+              while this row owns the next keystroke. */}
+          <div className="mt-pos-xs flex items-center gap-pos-xs">
+            <button
+              type="button"
+              onClick={() => onUpdateQuantity(item.id, item.quantity - 1)}
+              className="pos-button pos-button-secondary h-6 w-6 p-0"
+              aria-label={t("common.remove")}
+            >
+              −
+            </button>
+            <span className="font-data w-6 text-center text-body tabular-nums">
+              {item.quantity}
+            </span>
+            <button
+              type="button"
+              onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
+              className="pos-button pos-button-secondary h-6 w-6 p-0"
+              aria-label={t("common.add")}
+            >
+              +
+            </button>
+            {isSelected && (
+              <kbd className="pos-kbd ml-1" aria-hidden="true">
+                0-9
+              </kbd>
             )}
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={canOverridePrice ? startPriceEdit : undefined}
-            className={`font-data text-body tabular-nums ${
-              canOverridePrice
-                ? "cursor-pointer underline-offset-2 hover:underline"
-                : "cursor-default"
-            }`}
-            aria-label={
-              canOverridePrice ? t("sales.cart.editPrice") : undefined
-            }
-            title={
-              canOverridePrice ? t("sales.cart.editPrice") : undefined
-            }
+
+          {/* Lot and expiry are the safety-critical datum: the data face is
+              what keeps `0`/`O` and `1`/`l` apart at a glance. */}
+          <p className="mt-pos-xs font-data text-caption">
+            <span style={{ color: MUTED_INK }}>{t("sales.product.lot")}</span>{" "}
+            <span style={{ color: "var(--color-ink)" }}>{item.lotCode}</span>
+            <span aria-hidden="true" style={{ color: FAINT_INK }}>
+              {" · "}
+            </span>
+            <span style={{ color: MUTED_INK }}>
+              {t("sales.product.expires")}
+            </span>{" "}
+            <span style={{ color: "var(--color-ink)" }}>
+              {formatShortDate(item.lotExpirationDate)}
+            </span>
+          </p>
+
+          <div className="mt-pos-xs flex flex-wrap gap-pos-xs">
+            <CommissionBadge
+              commissionType={item.commissionType}
+              commissionValue={item.commissionValue}
+              commissionStartsAt={item.commissionStartsAt}
+              commissionEndsAt={item.commissionEndsAt}
+            />
+            {nearExpiry && (
+              <span className="pos-badge pos-badge-urgency">
+                {t("sales.product.near_expiry")}
+              </span>
+            )}
+            {item.isRestricted && (
+              <span className="pos-badge pos-badge-restrict">
+                {t("sales.product.restricted")}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* ── arithmetic stack: the right-aligned money column ── */}
+        <div className="flex flex-col items-end gap-pos-xs">
+          {/* quantity × unit price. An overridden price prints its catalog
+              figure struck through ahead of the live one, so the charge and
+              the figure it replaced are read in that order without a legend. */}
+          {editingPrice ? (
+            <div className="flex flex-col items-end gap-pos-xs">
+              <input
+                ref={priceRef}
+                type="number"
+                className={`pos-input w-28 text-right font-data tabular-nums ${
+                  priceError ? "border-red-500" : ""
+                }`}
+                value={priceDraft}
+                onChange={(e) => {
+                  setPriceDraft(e.target.value);
+                  if (priceError) setPriceError(null);
+                }}
+                onBlur={commitPrice}
+                onKeyDown={handlePriceKeyDown}
+                min={0}
+                step={1}
+                aria-label={t("sales.cart.editPrice")}
+                aria-invalid={!!priceError}
+              />
+              {priceError && (
+                <p
+                  className="max-w-40 text-right text-caption leading-tight"
+                  style={{ color: "var(--color-danger)" }}
+                  role="alert"
+                >
+                  {priceError}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="font-data text-body tabular-nums whitespace-nowrap">
+              <span style={{ color: FAINT_INK }}>{item.quantity} × </span>
+              {supersededPriceCents !== null && (
+                <>
+                  <span aria-hidden="true" className="pos-superseded">
+                    {formatCurrency(supersededPriceCents)}
+                  </span>{" "}
+                  {/* Assistive tech has no strikethrough, so the superseded
+                      amount is announced as such instead of read as a second,
+                      competing price. */}
+                  <span className="sr-only">
+                    {t("sales.cart.superseded_price", {
+                      price: formatCurrency(supersededPriceCents),
+                    })}
+                  </span>
+                </>
+              )}
+              {canOverridePrice ? (
+                <button
+                  type="button"
+                  onClick={startPriceEdit}
+                  className="pos-editable"
+                  aria-label={t("sales.cart.editPrice")}
+                  title={t("sales.cart.editPrice")}
+                >
+                  {formatCurrency(item.unitPriceCents)}
+                </button>
+              ) : (
+                formatCurrency(item.unitPriceCents)
+              )}
+              {isSelected && (
+                <kbd className="pos-kbd ml-1" aria-hidden="true">
+                  =
+                </kbd>
+              )}
+            </p>
+          )}
+
+          {/* Discount term. Always rendered and always a button — including the
+              em-dash placeholder — so the control a mouse-only user needs to
+              *add* a discount exists before one exists, and so the row does
+              not change height when the selection moves. */}
+          {editingDiscount ? (
+            <input
+              ref={discountRef}
+              type="number"
+              className="pos-input w-24 text-right font-data tabular-nums"
+              value={discountDraft}
+              onChange={(e) => setDiscountDraft(e.target.value)}
+              onBlur={commitDiscount}
+              onKeyDown={handleDiscountKeyDown}
+              min={0}
+              max={100}
+              step={1}
+              aria-label={t("sales.cart.editDiscount")}
+            />
+          ) : (
+            <p className="font-data text-body-sm tabular-nums whitespace-nowrap">
+              <button
+                type="button"
+                onClick={startDiscountEdit}
+                className="pos-editable"
+                aria-label={t("sales.cart.editDiscount")}
+                title={t("sales.cart.editDiscount")}
+              >
+                {hasDiscount ? (
+                  <>
+                    <span style={{ color: MUTED_INK }}>
+                      −{item.discountPercentage}%{" "}
+                    </span>
+                    <span style={{ color: "var(--color-ink)" }}>
+                      −{formatCurrency(discountCents)}
+                    </span>
+                  </>
+                ) : (
+                  <span aria-hidden="true" style={{ color: FAINT_INK }}>
+                    —
+                  </span>
+                )}
+              </button>
+              {isSelected && (
+                <kbd className="pos-kbd ml-1" aria-hidden="true">
+                  %
+                </kbd>
+              )}
+            </p>
+          )}
+
+          {isAmended && (
+            <>
+              <hr className="pos-divider w-full" />
+              {/* The amendment is carried by structure and ink weight, so it
+                  needs a name in the accessibility tree too. */}
+              <span className="sr-only">{t("sales.cart.line_amended")}</span>
+            </>
+          )}
+
+          <p
+            className="font-data text-price font-bold tabular-nums whitespace-nowrap"
+            style={{ color: "var(--color-ink)" }}
           >
-            {formatCurrency(item.unitPriceCents)}
-          </button>
-        )}
-      </td>
-
-      {/* Discount column */}
-      <td className="py-pos-sm px-pos-md align-top text-right">
-        {editingDiscount ? (
-          <input
-            ref={discountRef}
-            type="number"
-            className="pos-input w-20 text-right tabular-nums"
-            value={discountDraft}
-            onChange={(e) => setDiscountDraft(e.target.value)}
-            onBlur={commitDiscount}
-            onKeyDown={handleDiscountKeyDown}
-            min={0}
-            max={100}
-            step={1}
-            aria-label={t("sales.cart.editDiscount")}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={startDiscountEdit}
-            className="font-data text-body tabular-nums cursor-pointer underline-offset-2 hover:underline"
-            aria-label={t("sales.cart.editDiscount")}
-            title={t("sales.cart.editDiscount")}
-          >
-            {item.discountPercentage !== null
-              ? `${item.discountPercentage}%`
-              : "—"}
-          </button>
-        )}
-      </td>
-
-      {/* Line total — reflects discount */}
-      <td className="py-pos-sm px-pos-md align-top text-right">
-        <p className="font-data text-body font-semibold tabular-nums">
-          {formatCurrency(lineTotal)}
-        </p>
-      </td>
-
-      <td className="py-pos-sm pl-pos-md align-top text-right">
-        <button
-          type="button"
-          onClick={() => onRemove(item.id)}
-          className="pos-button pos-button-secondary h-6 w-6 p-0 text-caption"
-          aria-label={t("common.remove")}
-        >
-          ×
-        </button>
-      </td>
-    </tr>
+            {formatCurrency(lineTotalCents)}
+          </p>
+        </div>
+      </div>
+    </li>
   );
 };

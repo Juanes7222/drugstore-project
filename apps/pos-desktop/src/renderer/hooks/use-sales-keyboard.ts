@@ -36,7 +36,7 @@ import {
   selectSelectedLineId,
   setClient,
   setSelectedLine,
-  undoLastChange,
+  undoLastChange as undoLastChangeAction,
   updateItemDiscount,
   updateItemPrice,
   updateQuantity,
@@ -137,6 +137,14 @@ export interface UseSalesKeyboardReturn {
    * three outcomes (held / recalled / nothing to recall).
    */
   toggleHoldCart: () => void;
+  /**
+   * Undo the last cart change (Ctrl+Z) — the same code path the keyboard
+   * shortcut takes, exposed so a toolbar button can invoke it.
+   *
+   * No-ops while the sale is being created or while focus sits in a text
+   * field, mirroring the guards the keydown handler applies.
+   */
+  undoLastChange: () => void;
 }
 
 /** Roles allowed to override a line price (mirrors cart-line-item). */
@@ -152,6 +160,20 @@ const QUANTITY_SUFFIX_RE = /^\s*(.+?)\s+x\s*(\d+)\s*$/i;
 
 /** How long the scan/action flash stays visible on the search input. */
 const FEEDBACK_MS = 700;
+
+/**
+ * True when the event target is a text-entry surface, where the browser's
+ * native text undo must keep working instead of the cart undo.
+ */
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  const tagName = element?.tagName?.toLowerCase() ?? "";
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    element?.isContentEditable === true
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -407,6 +429,18 @@ export function useSalesKeyboard({
     }
   }, [cartItems.length, hasHeldCarts, dispatch, showFeedback]);
 
+  // -- Undo ----------------------------------------------------------------
+
+  /**
+   * Restore the cart to its previous state. Reads focus from the DOM rather
+   * than a key event so the button path is guarded exactly like Ctrl+Z.
+   */
+  const undoLastChange = useCallback(() => {
+    if (isCreating) return;
+    if (isTextEntryTarget(document.activeElement)) return;
+    dispatch(undoLastChangeAction());
+  }, [isCreating, dispatch]);
+
   // -- Global keydown (capture phase) -------------------------------------
 
   useEffect(() => {
@@ -418,11 +452,7 @@ export function useSalesKeyboard({
 
       const meta = event.metaKey || event.ctrlKey;
       const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName?.toLowerCase() ?? "";
-      const isInInput =
-        tagName === "input" ||
-        tagName === "textarea" ||
-        target?.isContentEditable === true;
+      const isInInput = isTextEntryTarget(target);
 
       // Checkout — always active on the sales screen, even while typing.
       // The parent checkout callback also guards on empty cart / in-flight.
@@ -467,7 +497,7 @@ export function useSalesKeyboard({
         if (isInInput) return;
         event.preventDefault();
         event.stopPropagation();
-        dispatch(undoLastChange());
+        undoLastChange();
         return;
       }
 
@@ -557,6 +587,7 @@ export function useSalesKeyboard({
     startQuickEdit,
     repeatLastSale,
     toggleHoldCart,
+    undoLastChange,
     showFeedback,
     onQuickSelect,
     dispatch,
@@ -572,5 +603,6 @@ export function useSalesKeyboard({
     feedback,
     repeatLastSale,
     toggleHoldCart,
+    undoLastChange,
   };
 }

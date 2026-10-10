@@ -5,7 +5,7 @@
  * callback, and quantity/remove controls.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 import { salesSlice } from "@/store/slices/sales-slice";
@@ -19,6 +19,12 @@ import type { CartItem, SaleDeliveryDraft } from "@/store/slices/sales-types";
 vi.mock("./client-selector", () => ({
   ClientSelector: () => <div data-testid="client-selector" />,
 }));
+
+/**
+ * The single cart line. Cart lines are `<li>` in a `<ul>` (they used to be
+ * table rows), so the list item is the one unambiguous anchor on a row.
+ */
+const cartLine = (): HTMLElement => screen.getByRole("listitem");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,6 +43,7 @@ const baseItem = (overrides: Partial<CartItem> = {}): CartItem => ({
   // 620 000 cents = $ 6.200 (formatCurrency divides by 100).
   unitPriceCents: 620_000,
   overrideUnitPriceCents: null,
+  originalUnitPriceCents: null,
   discountPercentage: null,
   costCents: 3_000,
   taxPercentage: 19,
@@ -211,11 +218,11 @@ describe("CartPanel", () => {
       const dispatch = vi.spyOn(store, "dispatch");
       renderCartPanel(store);
 
-      // The "-" button has aria-label "Eliminar" (same as ×),
-      // but there is only one row so any "Eliminar" button works.
-      const removeButtons = screen.getAllByRole("button", { name: "Eliminar" });
-      // The first "Eliminar" button is the "-" (quantity decrease)
-      fireEvent.click(removeButtons[0]);
+      // Both the "×" (remove line) and the "−" (step down) buttons carry
+      // aria-label "Eliminar", so the glyph is the only thing that tells
+      // them apart in the accessibility tree. Select by glyph within the
+      // line rather than by DOM position.
+      fireEvent.click(within(cartLine()).getByText("−"));
 
       expect(dispatch).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -232,12 +239,7 @@ describe("CartPanel", () => {
       const dispatch = vi.spyOn(store, "dispatch");
       renderCartPanel(store);
 
-      // The "×" button is the last "Eliminar" button in the row
-      // (after the "-" button). Since the table has one row, we
-      // get two "Eliminar" buttons: one for "-" and one for "×".
-      const removeButtons = screen.getAllByRole("button", { name: "Eliminar" });
-      // The second "Eliminar" button is the × (remove item)
-      fireEvent.click(removeButtons[1]);
+      fireEvent.click(within(cartLine()).getByText("×"));
 
       expect(dispatch).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -252,7 +254,10 @@ describe("CartPanel", () => {
     const store = createTestStore([baseItem()]);
     renderCartPanel(store);
 
-    expect(screen.getByText("Carrito (1 items)")).toBeInTheDocument();
+    // The locale pluralises: title_with_count_one = "Carrito · 1 producto".
+    expect(
+      screen.getByRole("heading", { name: "Carrito · 1 producto" }),
+    ).toBeVisible();
   });
 
   describe("CP-06: delivery fee in totals", () => {

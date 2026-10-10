@@ -80,6 +80,9 @@ export const SalesTransaction: FC = () => {
     cancelQuickEdit,
     submitSearch,
     feedback,
+    repeatLastSale,
+    toggleHoldCart,
+    undoLastChange,
   } = useSalesKeyboard({
     catalogService,
     isDialogOpen,
@@ -131,6 +134,9 @@ export const SalesTransaction: FC = () => {
         onQuickEditCommit={commitQuickEdit}
         onQuickEditCancel={cancelQuickEdit}
         onQuickEditDone={handleQuickEditDone}
+        onRepeatLastSale={repeatLastSale}
+        onToggleHoldCart={toggleHoldCart}
+        onUndoLastChange={undoLastChange}
         onMovementsContext={handleMovementsContext}
       />
 

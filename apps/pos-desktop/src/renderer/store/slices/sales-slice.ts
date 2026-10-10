@@ -13,6 +13,7 @@
  * already-shaped CartItem objects from components/services.
  */
 import { createSelector, createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { computeCartItemMoney } from "./cart-money";
 import {
   CartItem,
   GENERIC_CLIENT,
@@ -52,6 +53,14 @@ export const salesSlice = createSlice({
   name: "sales",
   initialState,
   reducers: {
+    /**
+     * Add a catalog line to the cart.
+     *
+     * Merging an incoming item into an existing line only bumps the quantity,
+     * so the line keeps its own price fields — in particular the pre-override
+     * snapshot, which must not be reset just because the cashier scanned more
+     * of an already-amended lot.
+     */
     addItem: (state, action: PayloadAction<CartItem>) => {
       pushUndo(state);
       const incoming = action.payload;
@@ -60,7 +69,13 @@ export const salesSlice = createSlice({
       if (existing) {
         existing.quantity += incoming.quantity;
       } else {
-        state.items.push(incoming);
+        // `addItem` never overrides a price, so the incoming catalog price is
+        // the pre-override baseline. Captured here, at the single insertion
+        // point, rather than trusting every caller to send it.
+        state.items.push({
+          ...incoming,
+          originalUnitPriceCents: incoming.unitPriceCents,
+        });
       }
       // Keep the newly added line selected so the cashier can adjust it
       // (quantity, discount, price) without reaching for the mouse.
@@ -103,6 +118,11 @@ export const salesSlice = createSlice({
      * Sets both `unitPriceCents` (effective) and `overrideUnitPriceCents`
      * (marker) so the downstream service can distinguish a manual override
      * from the original catalog price.
+     *
+     * On the first override, the current effective price is captured as
+     * `originalUnitPriceCents`; later overrides leave that snapshot alone, so
+     * a repeatedly re-priced line is still struck through against the catalog
+     * figure rather than against an intermediate one.
      */
     updateItemPrice: (
       state,
@@ -113,8 +133,16 @@ export const salesSlice = createSlice({
       const item = state.items.find((cartItem) => cartItem.id === id);
       if (!item) return;
 
-      item.unitPriceCents = Math.max(0, unitPriceCents);
-      item.overrideUnitPriceCents = Math.max(0, unitPriceCents);
+      const nextPriceCents = Math.max(0, unitPriceCents);
+
+      // `== null` also covers undefined: held carts persisted before this field
+      // existed are rehydrated straight from localStorage without migration.
+      if (item.originalUnitPriceCents == null) {
+        item.originalUnitPriceCents = item.unitPriceCents;
+      }
+
+      item.unitPriceCents = nextPriceCents;
+      item.overrideUnitPriceCents = nextPriceCents;
     },
 
     /**
@@ -266,35 +294,6 @@ export const selectCartItemCount = createSelector(
   [selectCartItems],
   (items) => items.reduce((sum, item) => sum + item.quantity, 0),
 );
-
-/**
- * Per-item money math, mirroring the domain sale service so the totals the
- * cashier sees are exactly what the DB records and the payment screen
- * charges:
- *   - discount = round(subtotal × pct / 100) to the cent
- *   - line total = subtotal − discount
- *   - tax = round(line total × rate / 100) to the cent
- *
- * The service applies the same per-item centavos rounding (ROUND_HALF_UP),
- * so the frontend total can never drift from sale.totalAmount — a drift of
- * a cent or more made credit-only payments look overpaid and threw
- * ChangeRequiresCashPaymentException at confirm time.
- */
-function computeCartItemMoney(item: CartItem): {
-  lineTotalCents: number;
-  taxCents: number;
-} {
-  const subtotalCents = item.unitPriceCents * item.quantity;
-  const discountCents = Math.round(
-    (subtotalCents * (item.discountPercentage ?? 0)) / 100,
-  );
-  const lineTotalCents = subtotalCents - discountCents;
-  const taxRate = (item.taxPercentage ?? 0) / 100;
-  return {
-    lineTotalCents,
-    taxCents: Math.round(lineTotalCents * taxRate),
-  };
-}
 
 /**
  * Subtotal in cents after per-item discounts.
