@@ -1026,6 +1026,11 @@ export async function clickWhenPresent(
     try {
       const target = await $(selector);
       await target.waitForExist({ timeout: 10_000 });
+      // Centre the target before clicking. A click on an element scrolled out
+      // of view fails in WebView2 with "move target out of bounds", and the
+      // click can land on nothing at all — the helper would report success and
+      // the spec would go on to wait for a toast that was never triggered.
+      await target.scrollIntoView({ block: "center", inline: "center" });
       await target.click();
       return;
     } catch (error) {
@@ -1487,9 +1492,29 @@ export async function expectToast(expected: string): Promise<void> {
 
   throw new Error(
     seen.length > 0
-      ? `no toast carrying "${expected}" appeared within 20s. Toasts seen: ${seen.join(" | ")}`
-      : `no toast carrying "${expected}" appeared within 20s`,
+      ? `no toast carrying "${expected}" appeared within 20s. Toasts seen: ${seen.join(" | ")}` +
+        (await describeVisibleAlerts())
+      : `no toast carrying "${expected}" appeared within 20s` +
+        (await describeVisibleAlerts()),
   );
+}
+
+/**
+ * The inline `role="alert"` messages currently on screen, if any.
+ *
+ * Appended to a failed toast assertion because many pages report a failure
+ * INLINE and not as a toast: the clients page sets `editError` on a rejected
+ * update and shows no toast at all, so "no toast appeared" said nothing about
+ * why. The inline message is the actual cause.
+ */
+async function describeVisibleAlerts(): Promise<string> {
+  const texts = await browser.execute(() =>
+    Array.from(document.querySelectorAll('[role="alert"]'))
+      .map((el) => (el.textContent ?? "").trim())
+      .filter((text) => text !== ""),
+  );
+  if (!Array.isArray(texts) || texts.length === 0) return "";
+  return `. Inline alerts: ${texts.join(" | ")}`;
 }
 
 /**

@@ -271,6 +271,17 @@ describe("Clients flow (real Tauri app against the real backend)", () => {
       '//div[.//h3[normalize-space(.)="Editar cliente"]]//button[normalize-space(.)="Guardar cliente"]',
       "Guardar cliente",
     );
+    // The panel unmounting is the STRUCTURAL signal that the save committed
+    // (`setEditingClient(null)` on success), and it is checked before the toast
+    // on purpose: when the click does not land, the panel stays open and the
+    // failure says "the edit panel never closed" — which points at the click —
+    // instead of "no toast appeared", which points at a toast.
+    await waitGone(
+      '//h3[normalize-space(.)="Editar cliente"]',
+      20,
+      500,
+      "client edit panel after save",
+    );
     await expectToast("Cliente actualizado correctamente.");
 
     // The search still filters on the (unchanged) document number, so the row is

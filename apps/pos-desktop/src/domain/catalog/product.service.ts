@@ -845,6 +845,18 @@ export class ProductService {
           : undefined,
         initialPrice: new Prisma.Decimal(input.price.price).toString(),
         initialTaxSchemeId: sanitizedTaxSchemeId,
+        // The initial COST travels with the creation, exactly like the price.
+        //
+        // It used to be left out, so the product was created locally with a
+        // cost history and then reached the server WITHOUT one: the server's
+        // `currentCost` came back null for a product the POS had priced and
+        // costed locally. That is not cosmetic — the cost is what the price
+        // floor compares against (`validateItemPricing`) and what the profit
+        // reports are built on, so a product synced without its cost silently
+        // lost the basis of both.
+        initialCost: input.initialCost
+          ? new Prisma.Decimal(input.initialCost.cost).toString()
+          : undefined,
         barcodes: input.barcodes.map((bc) => ({
           barcode: bc.barcode,
           barcodeType: bc.barcodeType,

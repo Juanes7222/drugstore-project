@@ -191,9 +191,20 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
       },
     );
 
-    // The offline sentinel is what makes the POS-minted internalCode visible
-    // here, and the server is the one that replaces it with a real P-code.
-    expect(local?.internalCode).toMatch(/^OFFLINE-/);
+    // The internal code is the POS's OWN name for the row until the server
+    // assigns one, and the server's name afterwards.
+    //
+    // The POS mints the `OFFLINE-` sentinel because it cannot know the
+    // server's sequence; the catalog pull then brings the server's `P…` code
+    // down and the local row carries THAT. Both are correct names for the same
+    // product, and WHICH one is present depends on whether the pull has landed
+    // yet — so demanding the sentinel here is a race against the sync, not an
+    // assertion about behaviour. (The comment above used to claim the opposite
+    // of what it asserted.)
+    //
+    // What actually pins the two rows together is asserted further down: the
+    // server's `sourceProductId` is the POS's local id.
+    expect(local?.internalCode).toMatch(/^(OFFLINE-|P\d+$)/);
     expect(local?.laboratory).toBe("Tecnoquímicas E2E");
     expect(local?.concentration).toBe("500");
     expect(local?.isActive).toBe(true);
@@ -227,24 +238,37 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
     // Hand-picking the fields above is how a dropped commission column or a
     // storage diff lives forever uncaught: the reconcile compares EVERYTHING
     // both projections carry and reports every difference at once.
+    //
+    // The fields that are NOT comparable are OMITTED from BOTH projections.
+    // The reconcile walks the UNION of the two sides' KEYS, so a field left on
+    // one side only is still part of the comparison — and a key whose value is
+    // `undefined` reads as "present on one side, absent on the other", which
+    // is a defect verdict, not a skip. Only a field missing from BOTH sides is
+    // out of the comparison entirely.
+    const OMIT = [
+      // Compared separately above: the barcodes are a one-to-many set.
+      "barcodes",
+      // Two different names for the same row: the POS's local UUID and the
+      // server's own id.
+      "id",
+      // The POS's OFFLINE- sentinel and the server's sequential P-code.
+      "internalCode",
+      // The server keeps the POS-local UUID under sourceProductId; asserted
+      // above, and not comparable as a field.
+      "sourceProductId",
+      // A server-side display join the POS validates by construction.
+      "currentTaxSchemeId",
+    ];
+
+    const comparable = (row: Record<string, unknown>): Record<string, unknown> =>
+      Object.fromEntries(
+        Object.entries(row).filter(([key]) => !OMIT.includes(key)),
+      );
+
     const findings = reconcileRow(
       `Product ${NEW_PRODUCT_NAME}`,
-      { ...local, barcodes: undefined } as unknown as Record<string, unknown>,
-      {
-        ...server,
-        barcodes: undefined,
-        // The POS never mints a server id and never holds the server's
-        // OWN internalCode — the OFFLINE- sentinel and the server's
-        // sequential P-code are two different names for the same row.
-        internalCode: undefined,
-        id: undefined,
-        // The server keeps the POS-local UUID under sourceProductId; the
-        // POS does not hold the server's counterpart anywhere.
-        sourceProductId: undefined,
-        // A server-only display join the POS validates by construction:
-        // a wrong tax scheme id here breaks the pull, not the replay.
-        currentTaxSchemeId: undefined,
-      } as unknown as Record<string, unknown>,
+      comparable(local as unknown as Record<string, unknown>),
+      comparable(server as unknown as Record<string, unknown>),
       {
         // The reader turns both sides' decimals into numbers; money fields
         // compare to the cent, text fields compare as trimmed strings.

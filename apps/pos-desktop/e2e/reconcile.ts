@@ -165,7 +165,16 @@ export function reconcileRow(
     const s = server[field];
 
     if (!present(s)) {
-      if (rule.serverOnly) continue;
+      // `localOnly` is the field that suppresses THIS branch: it names a column
+      // the POS carries and the server deliberately does not, so its absence on
+      // the server is the contract, not a dropped write.
+      //
+      // It used to be `serverOnly` here — the two rules were swapped — and the
+      // note on the very same finding already used `localOnly`, so the branch
+      // contradicted its own message. A `localOnly` field was reported as
+      // "present on the POS, absent on the server: storage dropped it" while
+      // the spec had declared its absence expected.
+      if (rule.localOnly) continue;
       findings.push({
         entity,
         field,
@@ -184,7 +193,6 @@ export function reconcileRow(
       // join, say). It has to suppress this branch too, not only the one above:
       // a field present solely on the server is not "never written locally", it
       // is out of contract.
-      if (rule.localOnly) continue;
       if (rule.serverOnly) continue;
       findings.push({
         entity,

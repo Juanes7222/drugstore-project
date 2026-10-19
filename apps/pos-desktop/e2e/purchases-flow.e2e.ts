@@ -596,7 +596,15 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
         // The local table records the batch as lotNumber; the server keeps
         // both its own lotNumber and the lot's atchNumber, and both must
         // carry the batch the cashier typed.
-        batchNumber: { localOnly: "the POS records the batch as lotNumber" },
+                // The local table records the batch as lotNumber; the server keeps
+        // both its own lotNumber and the lot's batchNumber, and both must
+        // carry the batch the cashier typed.
+        //
+        // `serverOnly`, not `localOnly`: the field is the SERVER's column —
+        // the POS simply does not carry it under that name — so its absence
+        // locally is the contract. `localOnly` is the opposite: a field the
+        // POS carries and the server does not.
+        batchNumber: { serverOnly: "the POS records the batch as lotNumber" },
         lotId: { tolerate: () => "server adopts the POS lot id on replay" },
         // Each store mints its own `PurchaseOrderItem.id` when it replays the
         // order confirmation, so the attribution agrees by ORDER AND PRODUCT
