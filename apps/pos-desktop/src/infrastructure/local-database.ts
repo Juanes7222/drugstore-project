@@ -898,6 +898,15 @@ async function dropLegacyProductNameColumns(client: PGlite): Promise<void> {
 /**
  * Colombian tax schemes — seeded locally so the app works fully offline.
  * Overwritten by server data when sync runs.
+ *
+ * `rate` is a PERCENTAGE (19 means 19%), matching the server's convention: the
+ * server stores `rate: 19` and the POS consumes it as `subtotal * rate / 100`
+ * (see `purchase-receptions.service.ts`). The seeds used to hold a FRACTION
+ * (0.19) instead, so the same tax scheme existed locally at two different
+ * scales depending on whether it had been synced — and the product form, which
+ * multiplies the rate by 100 to show a percentage, only ever matched the seed.
+ * A product created before the catalog pull landed therefore referenced
+ * `seed-iva-19`, which the domain rightly refuses to push to the server.
  */
 const DEFAULT_TAX_SCHEMES = [
   {
@@ -905,28 +914,28 @@ const DEFAULT_TAX_SCHEMES = [
     code: 'IVA',
     name: 'IVA 19%',
     taxType: 'IVA',
-    rate: 0.19,
+    rate: 19,
   },
   {
     id: 'seed-iva-5',
     code: 'IVA',
     name: 'IVA 5%',
     taxType: 'IVA',
-    rate: 0.05,
+    rate: 5,
   },
   {
     id: 'seed-exento',
     code: 'EXENTO',
     name: 'Exento',
     taxType: 'EXENTO',
-    rate: 0.0,
+    rate: 0,
   },
   {
     id: 'seed-inc',
     code: 'INC',
     name: 'Impuesto al Consumo (INC)',
     taxType: 'IMPOCONSUMO',
-    rate: 0.08,
+    rate: 8,
   },
 ] as const;
 

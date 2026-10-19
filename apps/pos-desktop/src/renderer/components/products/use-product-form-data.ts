@@ -5,8 +5,9 @@
  * @category Hook
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { PrismaClient } from "@pharmacy/database/local";
+import { CATALOG_SYNCED_EVENT } from "../../../domain/catalog/catalog-sync.service";
 import { getTenantConfigState } from "../../../domain/config/tenant-config.store";
 import {
   getStockValidationBehavior,
@@ -108,96 +109,104 @@ export function useProductFormData(): ProductFormDataResult {
   >(DEFAULT_FIELD_REQUIREMENTS);
   const [isRefDataLoading, setIsRefDataLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
+  const load = useCallback(async () => {
+    try {
+      const { getLocalDatabase } = await import(
+        "../../../infrastructure/local-database"
+      );
+      const { prisma } = await getLocalDatabase();
+      const db = prisma as PrismaClient;
 
-    const load = async () => {
-      try {
-        const { getLocalDatabase } = await import(
-          "../../../infrastructure/local-database"
-        );
-        const { prisma } = await getLocalDatabase();
-        const db = prisma as PrismaClient;
+      // Load categories
+      const catRows = await db.category.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      });
+      setCategories(catRows);
 
-        if (!cancelled) {
-          // Load categories
-          const catRows = await db.category.findMany({
-            orderBy: { name: "asc" },
-            select: { id: true, name: true },
-          });
-          setCategories(catRows);
+      // Load pharmaceutical forms
+      const formRows = await db.pharmaceuticalForm.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      });
+      setPharmaceuticalForms(formRows);
 
-          // Load pharmaceutical forms
-          const formRows = await db.pharmaceuticalForm.findMany({
-            orderBy: { name: "asc" },
-            select: { id: true, name: true },
-          });
-          setPharmaceuticalForms(formRows);
+      // Load tax schemes — deduplicated to hide seed vs server overlap
+      // (local seed `seed-iva-19` and serverUUID for "IVA 19%" share
+      //  same rate+taxType but different ids; without dedup the form
+      //  shows "IVA 19%" twice).
+      const taxRows = await db.taxScheme.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          rate: true,
+          taxType: true,
+          isActive: true,
+        },
+      });
+      const mappedTaxSchemes: TaxSchemeOption[] = deduplicateTaxSchemes(
+        taxRows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          code: row.code,
+          // The rate is already a PERCENTAGE (19 means 19%) — both the server
+          // and the local seed store it that way, and the domain consumes it as
+          // `subtotal * rate / 100`. Multiplying by 100 here made a SYNCED row
+          // read as 1900%, so it never matched the default the form picks
+          // (`rate === 19`) and the seed was chosen instead — whose id the
+          // domain then refuses to push.
+          rate: Number(row.rate),
+          taxType: row.taxType,
+        })),
+      );
+      setTaxSchemes(mappedTaxSchemes);
 
-          // Load tax schemes — deduplicated to hide seed vs server overlap
-          // (local seed `seed-iva-19` and serverUUID for "IVA 19%" share
-          //  same rate+taxType but different ids; without dedup the form
-          //  shows "IVA 19%" twice).
-          const taxRows = await db.taxScheme.findMany({
-            where: { isActive: true },
-            orderBy: { name: "asc" },
-            select: {
-              id: true,
-              name: true,
-              code: true,
-              rate: true,
-              taxType: true,
-              isActive: true,
-            },
-          });
-          const mappedTaxSchemes: TaxSchemeOption[] = deduplicateTaxSchemes(
-            taxRows.map((row) => ({
-              id: row.id,
-              name: row.name,
-              code: row.code,
-              rate: Number(row.rate) * 100,
-              taxType: row.taxType,
-            })),
-          );
-          setTaxSchemes(mappedTaxSchemes);
+      // Compute field visibility from tenant strictness config
+      const configState = getTenantConfigState();
+      const effectiveConfig = configState.effectiveConfig;
+      if (effectiveConfig) {
+        const stockBehavior = getStockValidationBehavior(effectiveConfig);
+        const prescriptionBehavior =
+          getPrescriptionEnforcementBehavior(effectiveConfig);
 
-          // Compute field visibility from tenant strictness config
-          const configState = getTenantConfigState();
-          const effectiveConfig = configState.effectiveConfig;
-          if (effectiveConfig) {
-            const stockBehavior = getStockValidationBehavior(effectiveConfig);
-            const prescriptionBehavior =
-              getPrescriptionEnforcementBehavior(effectiveConfig);
+        setFieldRequirements({
+          minimumStock: stockBehavior === "SKIP" ? "HIDDEN" : "OPTIONAL",
+          atcCode: prescriptionBehavior === "SKIP" ? "HIDDEN" : "OPTIONAL",
+          therapeuticIndication:
+            prescriptionBehavior === "SKIP" ? "HIDDEN" : "OPTIONAL",
+          invimaRegistry:
+            prescriptionBehavior === "SKIP" ? "HIDDEN" : "OPTIONAL",
+        });
 
-            setFieldRequirements({
-              minimumStock:
-                stockBehavior === "SKIP" ? "HIDDEN" : "OPTIONAL",
-              atcCode:
-                prescriptionBehavior === "SKIP" ? "HIDDEN" : "OPTIONAL",
-              therapeuticIndication:
-                prescriptionBehavior === "SKIP" ? "HIDDEN" : "OPTIONAL",
-              invimaRegistry:
-                prescriptionBehavior === "SKIP" ? "HIDDEN" : "OPTIONAL",
-            });
-
-            if (prescriptionBehavior === "BLOCK") {
-              setDefaultSaleType("PRESCRIPTION");
-            }
-          }
-
-          setIsRefDataLoading(false);
+        if (prescriptionBehavior === "BLOCK") {
+          setDefaultSaleType("PRESCRIPTION");
         }
-      } catch {
-        // Non-critical — categories, forms, and tax schemes are
-        // optional fields or may not be synced yet.
-        if (!cancelled) setIsRefDataLoading(false);
       }
-    };
 
+      setIsRefDataLoading(false);
+    } catch {
+      // Non-critical — categories, forms, and tax schemes are
+      // optional fields or may not be synced yet.
+      setIsRefDataLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
     void load();
-    return () => {
-      cancelled = true;
-    };
+  }, [load]);
+
+  // Reload reference data when a catalog pull lands. The initial load can
+  // run before the sync scheduler's first cycle finishes, leaving only the
+  // local seed rows; without this the form's default tax scheme stays a
+  // `seed-*` id and creating a product fails sync validation.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = () => void load();
+    window.addEventListener(CATALOG_SYNCED_EVENT, handler);
+    return () => window.removeEventListener(CATALOG_SYNCED_EVENT, handler);
   }, []);
 
   // Auto-select the tax scheme whose rate matches the regimen-derived IVA.

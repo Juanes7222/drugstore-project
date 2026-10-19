@@ -35,6 +35,7 @@
 import { $, browser, expect } from "@wdio/globals";
 import {
   signInAs,
+  isVisible,
   waitVisible,
   openScreen,
   openHubCard,
@@ -82,6 +83,11 @@ const SIBLING_BATCH = "LOT-001";
  * the LotSearchPanel renders inside the expanded group.
  */
 async function openAdjustmentsPage(): Promise<void> {
+  // Go through the hub explicitly. The rail is MODE-dependent: the sales
+  // screen's rail is a reduced set with no "Productos" in it, and a spec that
+  // switched user lands on the sales screen. "Inicio" is present in BOTH rails,
+  // so it is the one label that reliably gets back to the full one.
+  await openScreen("Inicio");
   await openScreen("Productos");
   await openHubCard("Ajustes de Inventario");
   // The page's <section> carries the aria-label the i18n title builds:
@@ -98,6 +104,17 @@ async function selectLotByBatch(batchNumber: string): Promise<void> {
   await openAdjustmentsPage();
 
   await setInputValue("#lot-search-input", batchNumber, "lot search");
+
+  // The lot list is GROUPED by product: the panel shows a product row
+  // (`role="button"`, carrying `aria-expanded`) and only renders the lot rows
+  // (`role="option"`) underneath once that product is expanded. Typing the
+  // batch number filters the lots — it does not expand anything — so the
+  // product row has to be opened before the lot itself exists in the DOM.
+  const productGroup =
+    '//div[@role="listbox"]//div[@role="button"][@aria-expanded="false"]';
+  await waitVisible(productGroup, 20, 1_000, "product group row");
+  await clickWhenPresent(productGroup, "product group");
+
   await waitVisible(
     `//div[@role="option"][.//span[normalize-space(.)="${batchNumber}"]]`,
     20,
@@ -125,6 +142,12 @@ async function selectLotByBatch(batchNumber: string): Promise<void> {
  * The type toggle is a pair of LABELS over `sr-only` radios, so the visible
  * Spanish label is the click target. "OTHER" requires a custom reason to be
  * typed before the submit is enabled; passing one fills it.
+ *
+ * `expectSuccessToast: false` is for the REFUSAL specs. Those never get a
+ * success toast — the page surfaces the refusal as a `role="alert"` banner and
+ * creates no document at all — so waiting for one would have them fail on a
+ * toast that is not supposed to exist rather than on the behaviour they are
+ * about.
  */
 async function submitAdjustment(args: {
   type: "INCREASE" | "DECREASE";
@@ -132,6 +155,7 @@ async function submitAdjustment(args: {
   reason?: "DAMAGED" | "EXPIRED" | "LOSS" | "FOUND" | "OTHER";
   customReason?: string;
   notes?: string;
+  expectSuccessToast?: boolean;
 }): Promise<void> {
   const label = args.type === "INCREASE" ? "Aumentar" : "Disminuir";
   // The label WRAPS the sr-only radio, so clicking the label's text toggles
@@ -168,7 +192,9 @@ async function submitAdjustment(args: {
   // committed; it carries the operation type's i18n name. The server replay
   // is asserted AFTER this, so a spec that bypassed the toast would be
   // asserting on a document that has not been built yet.
-  await expectToast("Ajuste de inventario");
+  if (args.expectSuccessToast !== false) {
+    await expectToast("Ajuste de inventario");
+  }
 }
 
 /** The newest APPLIED local document carrying exactly one movement for `lotId`. */
@@ -378,6 +404,8 @@ describe("Inventory adjustments (real Tauri app against the real backend)", () =
       quantity: String(overdrawQuantity),
       reason: "LOSS",
       notes: "E2E-A04 refused overdraw",
+      // A refusal produces the alert banner below and NO success toast.
+      expectSuccessToast: false,
     });
 
     // The refusal surfaces as the page's role=alert banner: the page sets
@@ -413,46 +441,46 @@ describe("Inventory adjustments (real Tauri app against the real backend)", () =
     expect(serverAdjAfter).toEqual(serverAdjBefore);
   });
 
-  it("E2E-A05: a CASHIER cannot apply an adjustment — the form refuses and nothing syncs", async () => {
+  it("E2E-A05: a CASHIER cannot reach the inventory adjustments at all", async () => {
+    // The CASHIER is refused at the DOOR, and that is the whole boundary.
+    //
+    // The nav rail is role-filtered: MANAGER and above get the inventory hub
+    // ("Productos"), a CASHIER does not. The adjustments screen therefore has
+    // no path into it for a CASHIER — the "reach the page but fail to apply"
+    // route this spec used to take does not exist, and the run failed on the
+    // missing "Productos" entry rather than on anything to do with adjustments.
+    //
+    // So the observable is the denial itself: the entry is absent, the screen
+    // cannot be opened, and no adjustment is created or synced. The
+    // service-level role gate behind it is covered by the domain unit tests.
     await signInAs(CASHIER);
 
     const lotBefore = (await fetchLocalLots(PRODUCT_IBUPROFENO)).find(
       (lot) => lot.batchNumber === BATCH,
     );
     expect(lotBefore).toBeDefined();
-
-    // The CASHIER must reach the page but not be able to push an
-    // adjustment. The apply-side role gate throws INSUFFICIENT_ROLE, which
-    // the page maps to the "role_inventory_admin" text; asserting on the
-    // Spanish message (rendered where the exception itself never is) is the
-    // observable half, and the lot's unchanged count is the behavioural
-    // witness.
     const stockBefore = lotBefore!.currentStock;
 
-    await selectLotByBatch(BATCH);
-    await submitAdjustment({
-      type: "INCREASE",
-      quantity: "5",
-      reason: "FOUND",
-      notes: "E2E-A05 role-gated attempt",
-    });
-
-    await browser.waitUntil(
-      async () => {
-        const text = await browser.execute(() => {
-          const banner = document.querySelector('[role="alert"]');
-          return banner?.textContent?.trim() ?? "";
-        });
-        return (
-          text.includes("permiso") || text.includes("Asistente de Inventario")
-        );
-      },
-      {
-        timeout: 15_000,
-        interval: 500,
-        timeoutMsg: "no role refusal surfaced for the cashier's attempt",
-      },
+    const serverAdjBefore = (await fetchServerAdjustments()).map(
+      (doc) => doc.id,
     );
+    // The local database survives between specs, so the earlier specs in this
+    // file have already created APPLIED documents. The count is compared
+    // against what it was, not against zero — a fixed zero would fail for the
+    // previous specs' legitimate work rather than for anything this one did.
+    const appliedBefore = (
+      await fetchLocalAdjustments()
+    ).filter((d) => d.state === "APPLIED").length;
+
+    // The inventory hub is simply not in a CASHIER's rail.
+    const productosEntry =
+      'button[role="menuitem"][aria-label="Productos"]';
+    expect(await isVisible(productosEntry)).toBe(false);
+
+    // And the screen it leads to is not reachable: the lot picker never
+    // renders for a CASHIER.
+    await openScreen("Inicio").catch(() => undefined);
+    expect(await isVisible("#lot-search-input")).toBe(false);
 
     // Nothing changed anywhere: the stock is byte-identical and no document
     // exists. A role gate that sent a PENDING entry to the queue would
@@ -463,6 +491,11 @@ describe("Inventory adjustments (real Tauri app against the real backend)", () =
     expect(lotAfter?.currentStock).toBe(stockBefore);
     expect(
       (await fetchLocalAdjustments()).filter((d) => d.state === "APPLIED"),
-    ).toHaveLength(0);
+    ).toHaveLength(appliedBefore);
+
+    const serverAdjAfter = (await fetchServerAdjustments()).map(
+      (doc) => doc.id,
+    );
+    expect(serverAdjAfter).toEqual(serverAdjBefore);
   });
 });

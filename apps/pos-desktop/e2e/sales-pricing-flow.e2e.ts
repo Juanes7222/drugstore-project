@@ -104,7 +104,11 @@ describe("Sales pricing (real Tauri app against the real backend)", () => {
     );
 
     await applyCartLineDiscount(IBUPROFENO, 25);
-    expect(await readCartLineDiscount(IBUPROFENO)).toBe("25%");
+    // The cart line now renders the discount as "−25% −$ 100" — percentage and
+    // amount side by side — where it used to be the bare percentage. Asserting
+    // the exact string would fail on the formatting rather than on the value,
+    // so the percentage is checked as a contained value.
+    expect(await readCartLineDiscount(IBUPROFENO)).toContain("25%");
 
     // The cart's own arithmetic: 400 − 25% = 300, and IVA is charged on the
     // DISCOUNTED base (sales-slice.computeCartItemMoney multiplies

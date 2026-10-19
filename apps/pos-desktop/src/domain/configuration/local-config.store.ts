@@ -344,7 +344,17 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
           // placeholder, silently wiping the configured company on every
           // config pull.
           sellerInfo: payload.sellerInfo ?? prev.sellerInfo,
-          purchasesConfig: payload.purchasesConfig ?? { ...DEFAULT_PURCHASES_CONFIG },
+          // The `purchases` block belongs to the TENANT config — the Compras tab
+          // writes it there and `useTenantConfig` pushes it into this store.
+          // The pos-settings payload does not carry it, so falling back to the
+          // POS's own default here CLOBBERED the pharmacy's setting on every
+          // pull: `requireLotOnReception` came back as `false` regardless of
+          // what the pharmacy had configured, and the inventory-adjustment
+          // screen rendered a flat product list instead of the lot picker.
+          //
+          // So an absent block keeps what is already known, exactly as
+          // `sellerInfo` above does. The order of the two pulls stops mattering.
+          purchasesConfig: payload.purchasesConfig ?? prev.purchasesConfig,
           lastSyncedAt: new Date().toISOString(),
         }));
       },

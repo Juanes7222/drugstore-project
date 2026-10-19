@@ -240,7 +240,16 @@ export async function pinSidebar(): Promise<void> {
  * Returns whether anything was removed.
  */
 async function clearCartViaUi(): Promise<boolean> {
-  const countRows = async (): Promise<number> =>
+  // The cart is a list of `<li>` lines, not a table of `<tr>` rows — the panel
+  // was rebuilt that way. Counting `tbody tr` here returned 0 forever, so the
+  // cleanup silently became a no-op and every spec inherited the previous
+  // spec's cart: a line left with a price override made the next spec's
+  // subtotal 19500 instead of 1200.
+  //
+  // `li[@data-amended]` is the cart line specifically. The panel also renders
+  // other lists (held carts, suggestions), and their `<li>`s are not lines of
+  // the current sale.
+  const countLines = async (): Promise<number> =>
     browser.execute((sel) => {
       const cart = document.evaluate(
         sel,
@@ -249,26 +258,26 @@ async function clearCartViaUi(): Promise<boolean> {
         XPathResult.FIRST_ORDERED_NODE_TYPE,
         null,
       ).singleNodeValue as Element | null;
-      return cart ? cart.querySelectorAll("tbody tr").length : 0;
-    }, `${CART}//tbody`);
+      return cart ? cart.querySelectorAll("li[data-amended]").length : 0;
+    }, CART);
 
-  const before = await countRows();
+  const before = await countLines();
   if (before === 0) {
     return false;
   }
 
   // One click per row, plus slack for a re-render between removals.
   for (let step = 0; step < before + 2; step += 1) {
-    if ((await countRows()) === 0) break;
+    if ((await countLines()) === 0) break;
 
-    const removeLast = `(${CART}//tbody/tr)[last()]//button[@aria-label="Eliminar"][last()]`;
+    const removeLast = `(${CART}//li[@data-amended])[last()]//button[@aria-label="Eliminar"][last()]`;
     const button = await $(removeLast);
     await button.waitForExist({ timeout: 10_000 });
     await button.click();
     await browser.pause(250);
   }
 
-  const after = await countRows();
+  const after = await countLines();
   if (after > 0) {
     throw new Error(
       `the cart still holds ${after} line(s) after every row's remove ` +
@@ -497,7 +506,16 @@ export async function ensureSalesScreen(depth = 0): Promise<void> {
     await pinSidebar();
     const ventasSelector = '//*[@role="menuitem" and contains(., "Ventas")]';
     if (await isVisible(ventasSelector)) {
-      await (await $(ventasSelector)).click();
+      // Centre the target before clicking. The sidebar is a SCROLLABLE rail, and
+      // `isVisible` accepts an item that merely occupies layout space — one
+      // scrolled out of view passes the check and then fails the click with
+      // "element not interactable". Measured mid-suite: the "Ventas" entry sat
+      // at y=-259 in a 900px viewport, after earlier `scrollIntoView` calls had
+      // moved the rail. This is the same reason `clickButtonByExactText` centres
+      // its target before clicking.
+      const ventasButton = await $(ventasSelector);
+      await ventasButton.scrollIntoView({ block: "center", inline: "center" });
+      await ventasButton.click();
       await handleSalesGate();
       return;
     }
@@ -623,6 +641,11 @@ async function openCashShiftAndReturnToSales(): Promise<void> {
   await (
     await $('//*[@role="menuitem" and contains(., "Ventas")]')
   )
+    .scrollIntoView({ block: "center", inline: "center" })
+    .catch(() => undefined);
+  await (
+    await $('//*[@role="menuitem" and contains(., "Ventas")]')
+  )
     .click()
     .catch(() => undefined);
 
@@ -668,8 +691,10 @@ export async function addProductToCart(
   const result = await $(resultSelector);
   await result.click();
 
-  // The cart panel (a table of rows) shows the added item.
-  const cartItemSelector = `//tr[.//p[contains(text(), "${productName}")]]`;
+  // The cart panel (a list of lines) shows the added item. The cart was
+  // rebuilt as an accessible `<ul>` of `<li>` lines, so it is no longer a
+  // table and `//tr[…]` matches nothing.
+  const cartItemSelector = `//li[.//p[contains(., "${productName}")]]`;
   await waitVisible(
     cartItemSelector,
     20,
@@ -1510,13 +1535,57 @@ export async function openScreen(menuLabel: string): Promise<void> {
   try {
     await waitVisible(item, 20, 1_000, `Sidebar item "${menuLabel}"`);
   } catch (error) {
-    // The sidebar disappearing between specs is usually a leftover overlay or a
-    // collapsed shell from the previous spec, and neither is visible from the
-    // bare "never became visible" message.
-    throw new Error(
-      `${error instanceof Error ? error.message : String(error)}. ` +
-        `Screen: ${await describeScreen()}`,
-    );
+    // The rail can be COLLAPSED with its items hidden, and `pinSidebar` only
+    // expands it when the "Expandir menú" button is visible — which is not
+    // true while both buttons are briefly present during the toggle animation,
+    // so the rail stayed collapsed and every item reported as absent. Expanding
+    // it here and retrying is what recovers from that.
+    const expand = 'button[aria-label*="Expandir"]';
+    if (await isVisible(expand)) {
+      try {
+        await (await $(expand)).click();
+      } catch {
+        // Fall through to the original failure below.
+      }
+      await waitVisible(item, 20, 1_000, `Sidebar item "${menuLabel}"`).catch(
+        () => undefined,
+      );
+    }
+
+    // The rail is MODE-dependent: on the sales screen it is a reduced set
+    // (Inicio, Ventas, Historial Ventas, Devoluciones, Turno de Caja,
+    // Clientes, Reportes) and simply has no "Productos" — nor "Configuración",
+    // nor "Usuarios". The full rail belongs to the hub. A spec that switches
+    // user lands on the sales screen, and the next navigation then fails with
+    // "never became visible" for an item that does not exist in that mode.
+    //
+    // So: go to the hub first, then retry the target.
+    const home = 'button[role="menuitem"][aria-label="Inicio"]';
+    if (await isVisible(home)) {
+      try {
+        const homeButton = await $(home);
+        await homeButton.scrollIntoView({ block: "center", inline: "center" });
+        await homeButton.click();
+        await browser.pause(500);
+      } catch {
+        // Fall through to the original failure below.
+      }
+      await waitVisible(item, 20, 1_000, `Sidebar item "${menuLabel}"`).catch(
+        () => undefined,
+      );
+    }
+
+    if (await isVisible(item)) {
+      // Recovered — carry on to the click.
+    } else {
+      // The sidebar disappearing between specs is usually a leftover overlay or
+      // a collapsed shell from the previous spec, and neither is visible from
+      // the bare "never became visible" message.
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}. ` +
+          `Screen: ${await describeScreen()}`,
+      );
+    }
   }
   // Centre before clicking: the sidebar is a scrollable rail, and `waitVisible`
   // accepts an item that is merely off-layout but scrolled out of view. Measured
@@ -1569,14 +1638,21 @@ export async function expectPageHeading(
  *
  * Expressed in XPath because the helpers resolve a selector with
  * `document.evaluate` whenever it starts with `//` — a CSS prefix would send
- * `cartRow`'s composite selector to `querySelector` instead, where the `//tr…`
+ * `cartRow`'s composite selector to `querySelector` instead, where the `//li…`
  * tail is not valid CSS.
  */
 const CART = '//section[@data-nav-zone="cart"]';
 
-/** The `<tr>` for one cart line, addressed by the product name it renders. */
+/**
+ * The `<li>` for one cart line, addressed by the product name it renders.
+ *
+ * The cart is an accessible list, not a table: the panel was rebuilt as a
+ * `<ul>` of `<li>` lines, so the old `//tr[…]` selector matched nothing.
+ * `contains(., …)` rather than `contains(text(), …)` because the name sits in
+ * an element whose own text is split across nodes.
+ */
 function cartRow(productName: string): string {
-  return `${CART}//tr[.//p[contains(text(),"${productName}")]]`;
+  return `${CART}//li[@data-amended][.//p[contains(.,"${productName}")]]`;
 }
 
 /** Read a cart totals row by its Spanish label ("Subtotal", "IVA (19%)", "TOTAL"). */

@@ -125,8 +125,12 @@ describe("Sales flow (real Tauri app against the real backend)", () => {
     await addProductToCart("acetaminofén", ACETAMINOFEN);
     await addProductToCart("ibuprofeno", IBUPROFENO);
 
+    // The cart is an accessible list of `<li>` lines, not a table of `<tr>`
+    // rows — the panel was rebuilt that way and the old `//tr[…]` selector
+    // matched nothing. `contains(., …)` because the name is split across text
+    // nodes and `text()` only ever yields the first one.
     const cartPanelSelector =
-      '//section[.//tr[.//p[contains(text(), "Acetaminofén 500mg")]]]';
+      '//section[.//li[.//p[contains(., "Acetaminofén 500mg")]]]';
     await waitVisible(cartPanelSelector, 15, 1_000, "Cart panel");
     const cartText = await (await $(cartPanelSelector)).getText();
     if (!cartText.includes(ACETAMINOFEN) || !cartText.includes(IBUPROFENO)) {

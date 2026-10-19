@@ -39,6 +39,22 @@ import {
   setCatalogLastSyncedAt,
 } from '../../common/sync-metadata';
 
+/**
+ * Window event fired after every successful catalog apply.
+ *
+ * The renderer loads reference data (tax schemes, forms, categories) once per
+ * mount; without this signal a form opened before the pull landed keeps a
+ * stale view where only the local seed rows exist — and creating a product
+ * then captures a `seed-*` id that the sync payload must reject.
+ * UI code listens for this name and reloads its reference data.
+ */
+export const CATALOG_SYNCED_EVENT = 'catalog:synced';
+
+function notifyCatalogSynced(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(CATALOG_SYNCED_EVENT));
+}
+
 // ---------------------------------------------------------------------------
 // HTTP client abstraction (same pattern as auth.service.ts)
 // ---------------------------------------------------------------------------
@@ -281,6 +297,7 @@ export class CatalogSyncService {
     });
 
     setCatalogLastSyncedAt(new Date().toISOString());
+    notifyCatalogSynced();
   }
 
   /**

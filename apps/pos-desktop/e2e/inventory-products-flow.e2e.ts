@@ -30,7 +30,7 @@
  * NOT enough. The seeded fixture account able to do both is ADMIN.
  */
 
-import { browser, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import {
   signInAs,
   waitVisible,
@@ -124,9 +124,50 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
     await setInputValue("#pf-min-stock", "12", "minimum stock");
     await setInputValue("#pf-invima", "INVIMA-E2E-001", "INVIMA registry");
 
+    // The tax scheme is chosen EXPLICITLY, and only once the SERVER's row is
+    // in the list.
+    //
+    // The local catalog is seeded with `seed-iva-19` and the catalog pull-sync
+    // adds the server's row under a different id. The form deduplicates the two
+    // and prefers the server's — but only once that row has arrived. Before the
+    // pull lands, the only "IVA 19%" available IS the seed, and submitting it
+    // fails the domain's own guard: "Reference taxScheme 'seed-iva-19' looks
+    // like a local seed id (only valid in the offline catalog, not on the
+    // server)".
+    //
+    // So the spec waits for the server's option and picks it, instead of
+    // inheriting whichever one happened to be there.
+    // The wait is on the option's EXISTENCE, not its visibility: an `<option>`
+    // has no layout box of its own, so the suite's layout-space visibility
+    // check would never consider it visible and the wait would time out on a
+    // perfectly good select.
+    await waitVisible("#pf-tax-scheme", 60, 1_000, "tax scheme select");
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (id: string) => {
+            const select = document.querySelector(
+              "#pf-tax-scheme",
+            ) as HTMLSelectElement | null;
+            return (
+              !!select &&
+              Array.from(select.options).some((option) => option.value === id)
+            );
+          },
+          TAX_SCHEME_ID,
+        ),
+      {
+        timeout: 60_000,
+        interval: 500,
+        timeoutMsg:
+          "the server's tax scheme never appeared in the product form's options",
+      },
+    );
+    await (await $("#pf-tax-scheme")).selectByAttribute("value", TAX_SCHEME_ID);
+
     // The barcode row is prefilled with one empty slot set as primary.
     await setInputValue(
-      '#product-form input[type="text"][placeholder="Código de barras"]',
+      "#pf-barcode",
       NEW_BARCODE,
       "primary barcode",
     );
@@ -229,7 +270,7 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
     await setInputValue("#pf-laboratory", "Laboratorio Base", "laboratory");
     await setInputValue("#pf-price", "4000", "price");
     await setInputValue(
-      '#product-form input[type="text"][placeholder="Código de barras"]',
+      "#pf-barcode",
       "7705555000024",
       "barcode",
     );
@@ -297,7 +338,7 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
     await setInputValue("#pf-laboratory", "GSK E2E", "laboratory");
     await setInputValue("#pf-price", "6000", "price");
     await setInputValue(
-      '#product-form input[type="text"][placeholder="Código de barras"]',
+      "#pf-barcode",
       "7705555000031",
       "barcode",
     );
@@ -391,7 +432,7 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
 
     // The barcode of the SEEDED product — the create must refuse it.
     await setInputValue(
-      '#product-form input[type="text"][placeholder="Código de barras"]',
+      "#pf-barcode",
       "7701234567891",
       "duplicate barcode",
     );

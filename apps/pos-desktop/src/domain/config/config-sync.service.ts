@@ -10,6 +10,7 @@
 import { isOnline } from '../../common/is-online';
 import type { TenantConfigSyncPayload } from './types';
 import { useTenantConfigStore } from './tenant-config.store';
+import { useLocalConfigStore } from '../configuration/local-config.store';
 import { useLocalSessionStore } from '../auth/local-session.store';
 
 // ---------------------------------------------------------------------------
@@ -86,6 +87,24 @@ export function createTenantConfigSyncService(
         // Hydrate the Zustand store with the full config + workstation overrides
         const store = useTenantConfigStore;
         store.getState().setConfig(payload.config, payload.workstationConfig);
+
+        // The `purchases` block ALSO lives in the local config store, and that
+        // is the copy the screens read: `useRequireLotOnReception` (and with it
+        // the inventory-adjustment screen) resolves from
+        // `useLocalConfigStore.purchasesConfig`, not from the tenant-config
+        // store this pull hydrates.
+        //
+        // Without this line the two stores disagreed and only the unread one
+        // was fed: `requireLotOnReception` stayed at the POS's own default
+        // (`false`) no matter what the pharmacy had configured, so the
+        // adjustments screen rendered a flat product list with automatic FEFO
+        // resolution instead of the lot picker — the pharmacy's policy was not
+        // being applied at all.
+        if (payload.config?.purchases) {
+          useLocalConfigStore
+            .getState()
+            .updatePurchasesConfig(payload.config.purchases);
+        }
 
         // Update presets list if provided
         if (payload.presets && payload.presets.length > 0) {

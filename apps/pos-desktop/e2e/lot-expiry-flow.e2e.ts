@@ -114,7 +114,10 @@ describe("Lot expiration (real Tauri app against the real backend)", () => {
 
     await addProductToCart("nitrofen", NEAR_EXPIRY);
 
-    const row = `//section[@data-nav-zone="cart"]//tr[.//p[contains(text(),"${NEAR_EXPIRY}")]]`;
+    // The cart is an accessible list of `<li>` lines, not a table of `<tr>`
+    // rows — the panel was rebuilt that way and the old `//tr[…]` selector
+    // matched nothing.
+    const row = `//section[@data-nav-zone="cart"]//li[.//p[contains(.,"${NEAR_EXPIRY}")]]`;
     await waitVisible(
       `${row}//span[normalize-space(.)="VENCE PRONTO"]`,
       20,
@@ -123,6 +126,10 @@ describe("Lot expiration (real Tauri app against the real backend)", () => {
     );
 
     // The expiry the cashier is shown is the lot's own date.
+    //
+    // The whole LINE is read, not a first cell: the cart is an accessible list
+    // of `<li>` lines now, with no `<td>` to address, so `row/td[1]` resolved
+    // to nothing and the text came back empty.
     const lineText = await browser.execute(
       (selector: string) =>
         document.evaluate(
@@ -132,7 +139,7 @@ describe("Lot expiration (real Tauri app against the real backend)", () => {
           XPathResult.FIRST_ORDERED_NODE_TYPE,
           null,
         ).singleNodeValue?.textContent ?? "",
-      `${row}/td[1]`,
+      `${row}`,
     );
     expect(lineText).toContain("LOT-003");
 
@@ -174,7 +181,7 @@ describe("Lot expiration (real Tauri app against the real backend)", () => {
 
     await addProductToCart("otrivin", ALREADY_EXPIRED);
 
-    const row = `//section[@data-nav-zone="cart"]//tr[.//p[contains(text(),"${ALREADY_EXPIRED}")]]`;
+    const row = `//section[@data-nav-zone="cart"]//li[.//p[contains(.,"${ALREADY_EXPIRED}")]]`;
     // `.` and not `text()`: the lot line is several JSX text nodes
     // ("Lote", ": ", "LOT-004", " — ", "Vence", …), so `text()` only ever
     // yields the first one — "Lote:" — and this predicate could never match

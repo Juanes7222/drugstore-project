@@ -58,9 +58,24 @@ export class TenantConfigController {
 
   /**
    * Returns current tenant configuration (sensitive fiscal fields stripped).
+   *
+   * ADMIN is allowed to READ it, even though it cannot write it.
+   *
+   * The POS needs this at boot to know the pharmacy's own operating rules —
+   * `purchases.requireLotOnReception` above all — and the role it boots as is
+   * frequently ADMIN. With the read restricted to MANAGER/OWNER, that boot got
+   * a 403, the POS kept its own local default (`requireLotOnReception: false`),
+   * and the inventory-adjustment screen silently rendered a DIFFERENT interface:
+   * a flat product list with automatic FEFO resolution instead of the lot
+   * picker the pharmacy had configured. The pharmacy's policy was not being
+   * read, so it was not being applied.
+   *
+   * Reading your own pharmacy's configuration is not a privileged operation,
+   * and the WRITE below stays exactly as restricted — an ADMIN still cannot
+   * change a thing.
    */
   @Get()
-  @Roles(RoleType.MANAGER, RoleType.OWNER)
+  @Roles(RoleType.MANAGER, RoleType.OWNER, RoleType.ADMIN)
   async getConfig(@CurrentUser() user: User): Promise<unknown> {
     return this.tenantConfigService.getBySubscription(
       user.subscriptionId ?? '',

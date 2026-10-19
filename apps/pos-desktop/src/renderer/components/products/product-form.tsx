@@ -738,6 +738,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                 >
                   {/* Barcode value */}
                   <input
+                    id={index === 0 ? "pf-barcode" : undefined}
                     type="text"
                     value={bc.barcode}
                     onChange={(e) =>
