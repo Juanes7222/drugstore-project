@@ -29,6 +29,7 @@ export interface CountEntry {
 /** Close wizard state machine. */
 export type CloseWizardStep =
   | { step: 'idle' }
+  | { step: 'loading-summary' }
   | { step: 'summary'; data: ShiftSummary }
   | { step: 'count'; data: ShiftSummary }
   | { step: 'confirm'; data: { summary: ShiftSummary; counts: CountEntry[] } }

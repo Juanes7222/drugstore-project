@@ -37,6 +37,13 @@ vi.mock("@/store/hooks", () => ({
 
 const PAGE_SIZE = 20;
 
+const EMPTY_SUMMARY = {
+  transactionCount: 0,
+  totalSalesAmount: "0",
+  openingBalance: "0",
+  totalsByPaymentMethod: [],
+};
+
 function makeShift(index: number): CashShiftRecord {
   return {
     id: `shift-${String(index).padStart(4, "0")}`,
@@ -59,16 +66,45 @@ function makeShift(index: number): CashShiftRecord {
   };
 }
 
-interface RenderPageOptions {
-  getShiftHistory: ReturnType<typeof vi.fn>;
+/** The store-wide shift while it is still open — what the close wizard runs on. */
+function makeOpenShift(): CashShiftRecord {
+  return {
+    ...makeShift(1),
+    state: "OPEN",
+    closedAt: null,
+    closedByUserId: null,
+  };
 }
 
-function renderPage({ getShiftHistory }: RenderPageOptions) {
+/** An ADMIN session: only admin-level roles may open or close the shift. */
+function makeAdminSession() {
+  return {
+    userId: "user-1",
+    username: "admin",
+    fullName: "Administradora Principal",
+    displayName: "Administradora Principal",
+    role: "ADMIN",
+    subscriptionId: "sub-1",
+    workstationId: "ws-1",
+    accessToken: "",
+    refreshToken: "",
+    sessionId: "session-1",
+    sessionTrust: "SERVER_VERIFIED",
+  };
+}
+
+interface RenderPageOptions {
+  getShiftHistory: ReturnType<typeof vi.fn>;
+  getShiftSalesSummary?: ReturnType<typeof vi.fn>;
+}
+
+function renderPage({ getShiftHistory, getShiftSalesSummary }: RenderPageOptions) {
   const cashShiftService = {
     getShiftHistory,
     hydrateStore: vi.fn(),
     openShift: vi.fn(),
-    getShiftSalesSummary: vi.fn(),
+    getShiftSalesSummary:
+      getShiftSalesSummary ?? vi.fn().mockResolvedValue(EMPTY_SUMMARY),
     getShiftFiscalComparison: vi.fn().mockResolvedValue(null),
     closeWithCounts: vi.fn(),
   };
@@ -236,5 +272,62 @@ describe("CashShiftPage history", () => {
       expect(getShiftHistory).toHaveBeenCalledTimes(2);
     });
     expect(getShiftHistory).toHaveBeenNthCalledWith(2, { limit: PAGE_SIZE });
+  });
+});
+
+/**
+ * The close wizard.
+ *
+ * Regression guard for a race the e2e suite hit on every close: the summary
+ * is computed asynchronously, and the resolution used to OVERWRITE the step
+ * the cashier was on. A cashier who advanced into the count step before the
+ * totals arrived was pulled back to the summary — and the count step they
+ * had reached was the empty one.
+ */
+describe("CashShiftPage close wizard", () => {
+  beforeEach(() => {
+    useCashShiftStore.setState({ currentShift: makeOpenShift(), isLoading: false });
+    useLocalSessionStore.setState({ session: makeAdminSession() as never });
+    useCompanySetupStore.setState({ status: "complete" });
+  });
+
+  it("waits for the shift summary instead of offering an empty one", async () => {
+    let resolveSummary!: (value: typeof EMPTY_SUMMARY) => void;
+    const getShiftSalesSummary = vi.fn().mockImplementation(
+      () =>
+        new Promise<typeof EMPTY_SUMMARY>((resolve) => {
+          resolveSummary = resolve;
+        }),
+    );
+
+    renderPage({
+      getShiftHistory: vi.fn().mockResolvedValue({ shifts: [], total: 0 }),
+      getShiftSalesSummary,
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Cerrar turno" }));
+
+    // The totals are still being computed: there must be no "Siguiente" to
+    // click, because it would take the cashier into a count step with no
+    // numbers in it.
+    expect(
+      screen.queryByRole("button", { name: "Siguiente" }),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveSummary({
+        transactionCount: 3,
+        totalSalesAmount: "1500",
+        openingBalance: "0",
+        totalsByPaymentMethod: [],
+      });
+    });
+
+    // The summary is ready → the wizard advances with the real numbers.
+    expect(
+      await screen.findByRole("button", { name: "Siguiente" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
   });
 });

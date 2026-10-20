@@ -13,7 +13,10 @@ mano. Era una segunda copia no verificada del contrato de la API: un cambio en
 la forma real de una respuesta dejaba el mock en verde mientras la aplicación
 se rompía. Compartir solo el cable HTTP es lo que hace que eso falle aquí.
 
-Estado actual: **2 specs / 10 tests verdes** (`sales-flow`, `returns-flow`).
+Estado actual: **13 specs / 53 tests** (`sales-flow`, `sales-pricing-flow`,
+`sales-config-flow`, `sales-credit-flow`, `returns-flow`, `purchases-flow`,
+`inventory-products-flow`, `inventory-adjustments-flow`, `clients-flow`,
+`lot-expiry-flow`, `users-flow`, `tenant-config-flow`, `cash-shift-flow`).
 Cobertura pendiente: ver §10.
 
 ---
@@ -69,6 +72,12 @@ Las dos únicas fuentes de verdad son:
 
 - `e2e/server-state.ts` — estado del **servidor** (Postgres vía `pg`).
 - `e2e/local-state.ts` — estado del **dispositivo** (PGlite vía `window.__db`).
+
+Y no basta con afirmar en una de las dos: una venta puede llegar al servidor
+perfecta y quedar mal escrita en la base local — sin asignación de lote, sin
+fila de pago, con el cambio en 0 — y el POS es quien la devuelve, la
+reimprime y la arquea. Por eso `e2e/reconcile.ts` compara ambas proyecciones
+campo por campo y `sales-flow` (S01) lo exige.
 
 Cuando un test falla, el mensaje debe decir cuál de las dos está mal. "No pasó"
 no es un diagnóstico.
@@ -270,10 +279,21 @@ ajustar el assert**. Bugs encontrados y corregidos:
    (pasaba en Node, fallaba en la app).
 6. `selectCanConfirmPayment` ignoraba el efectivo entregado y habilitaba
    confirmar una venta con tarjeta sin efectivo que el servidor luego rechazaba.
+7. **El wizard de cierre de turno se corría a sí mismo.** El resumen se
+   calcula asíncrono (resuelve la vista operativa de cada factura del turno)
+   y su llegada **sobrescribía el paso en el que ya estaba el cajero**: quien
+   avanzaba al paso de conteo antes de que llegaran los totales volvía al
+   resumen, y el paso de conteo que había alcanzado era el vacío. Ahora el
+   wizard espera en un estado de carga hasta que los números son reales.
+8. `e2e/local-state.ts` → `fetchLocalSyncQueue` estaba **roto**: su
+   `WHERE $1::text IS NULL OR "operationType" = $1` fija el parámetro a texto
+   y Postgres rechaza `enum = text`. No se notó porque el helper no lo usaba
+   nadie: era código muerto. Lo encontró el test que lo puso a trabajar.
 
 Al añadir un test, verifica también si el **mock** de un unit test existente
 sigue siendo válido: si tu fix cambia la llamada que el código hace, el mock es
-la siguiente víctima.
+la siguiente víctima. Y comprueba si el helper que ibas a usar **está roto**:
+un lector que nadie llama puede llevar meses roto sin que nadie lo note.
 
 ---
 
@@ -284,11 +304,12 @@ cubrir; esto es lo que más valor da):
 
 | # | Flujo | Nota |
 |---|---|---|
-| 1 | **Turno de caja**: apertura, arqueo, cierre, esperado vs contado | `SHIFT_OPEN`/`SHIFT_CLOSURE` ya están en `SUPPORTED_TYPES` |
-| 2 | **Compras**: orden, recepción, devolución a proveedor | El replay de devolución a proveedor tuvo un bug de stock (§9, similar al #7) |
-| 3 | **Inventario**: ajuste por conteo, lotes agotados, FEFO | |
-| 4 | **Crédito de cliente**: pago y anulación | Ya implementado en el dispatcher, sin cobertura E2E |
-| 5 | **Perfil del cliente**: crear, editar, desactivar, consentimiento | El pull de clientes ya funciona; falta la escritura |
+| ✅ | **Turno de caja**: apertura, arqueo, cierre | `cash-shift-flow` (SH01–SH02): el turno que abre la app llega al servidor con el MISMO id y la venta queda colgada de él; el cierre desde la UI cierra el turno del servidor con el efectivo contado |
+| 1 | **Compras**: devolución a proveedor | El replay de devolución a proveedor tuvo un bug de stock (§9, similar al #7); orden y recepción ya están cubiertos (`purchases-flow`) |
+| 2 | **Crédito de cliente**: pago y anulación | `CLIENT_CREDIT_PAYMENT` / `_ANNULMENT` ya están en el dispatcher, sin cobertura E2E (la venta a crédito sí está cubierta) |
+| 3 | **Inventario**: FEFO y venta que consume varios lotes | El ajuste por conteo está cubierto (`inventory-adjustments-flow`) |
+| 4 | **Perfil del cliente**: consentimiento y venta a cliente desactivado | Crear/editar/desactivar ya están cubiertos (`clients-flow`) |
+| 5 | **Negativa del servidor**: stock insuficiente, cliente inactivo, barcode duplicado en el servidor | Hoy las negativas son locales (§8): ninguna comprueba que el SERVIDOR rechace y que la cola local quede `PERMANENT_FAILURE` |
 | 6 | **Farmacia**: recetas y controlados | |
 | 7 | **Impresión**: recibo y nota crédito | El `PrintRouter` no está conectado al WebView todavía |
 | 8 | **Caída de red**: cortar y reconectar a mitad de venta | El motor de reintentos merece E2E |
@@ -315,21 +336,37 @@ y solo aparece en la segunda corrida.
 
 | Archivo | Rol |
 |---|---|
-| `e2e/wdio.conf.ts` | driver, workers, ciclo de vida de infra |
+| `e2e/wdio.conf.ts` | driver, workers, orden de los specs, ciclo de vida de infra |
 | `e2e/real-backend.ts` | docker, migraciones, fixture reset, servidor NestJS |
 | `e2e/native-driver.ts` | resuelve/descarga `msedgedriver` |
 | `e2e/build-tauri.mjs` | compila el binario Tauri en modo `wdio` |
 | `e2e/workstation-id.ts` | identidad de estación fijada |
-| `e2e/server-state.ts` | **estado del servidor** (Postgres) + helpers de DIAN |
-| `e2e/local-state.ts` | **estado del dispositivo** (PGlite) + aislamiento |
+| `e2e/server-state.ts` | **estado del servidor** (Postgres) + helpers de DIAN + turnos |
+| `e2e/local-state.ts` | **estado del dispositivo** (PGlite) + aislamiento + espejo de venta/turno |
+| `e2e/reconcile.ts` | diff campo por campo entre las dos proyecciones |
 | `e2e/helpers.ts` | login, navegación, widgets, `expectPesos` |
-| `e2e/sales-flow.e2e.ts` | S01–S06 |
+| `e2e/sales-flow.e2e.ts` | S01–S06 (S01 reconcilia local ↔ servidor) |
+| `e2e/sales-pricing-flow.e2e.ts` | S07–S11 (descuentos, override de precio, cantidades) |
+| `e2e/sales-config-flow.e2e.ts` | SC01–SC04 (configuración de ventas global) |
+| `e2e/sales-credit-flow.e2e.ts` | CR01–CR03 (venta a crédito) |
 | `e2e/returns-flow.e2e.ts` | R01–R02 (incluye el camino cross-workstation) |
+| `e2e/purchases-flow.e2e.ts` | P01–P06 (orden, recepción, costo, precio) |
+| `e2e/inventory-products-flow.e2e.ts` | I01–I04 (alta, edición, precio, barcode duplicado) |
+| `e2e/inventory-adjustments-flow.e2e.ts` | A01–A05 (ajuste por conteo, aislamiento, permisos) |
+| `e2e/clients-flow.e2e.ts` | C01–C04 (alta, edición, desactivación) |
+| `e2e/lot-expiry-flow.e2e.ts` | X01–X03 (lotes por vencer, vencidos, gating por config) |
+| `e2e/users-flow.e2e.ts` | U01–U03 (alta, PIN, estado) |
+| `e2e/tenant-config-flow.e2e.ts` | T01–T06 (configuración por tenant) |
+| `e2e/cash-shift-flow.e2e.ts` | SH01–SH02 (turno: apertura, arqueo, cierre) |
 | `apps/server/test/pos-e2e/baseline.ts` | fixture del mundo + ids compartidos |
 | `apps/server/test/pos-e2e/reset.ts` | TRUNCATE + siembra |
 | `.github/workflows/pos-e2e.yml` | CI en `windows-latest` (bloqueante) |
 
 Al añadir un spec nuevo, agregarlo a `specs:` en `wdio.conf.ts`.
+
+**`cash-shift-flow` va último** a propósito: el turno es de tienda, no de
+caja, así que cerrarlo dejaría sin turno a todos los specs que vinieran
+después.
 
 ---
 

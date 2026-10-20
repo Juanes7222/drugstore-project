@@ -167,6 +167,10 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
    *   - `sales-config-flow` writes pharmacy-wide settings and restores each one
    *     it changes, so it leaves `POS_DISCOUNT_LIMITS` / `POS_SALES_CONFIG`
    *     as it found them.
+   *   - `cash-shift-flow` runs LAST because the cash shift is store-wide: it
+   *     closes the shift, and a shift left closed would leave every later spec
+   *     without one. It also needs the shift the sales specs opened, so it
+   *     cannot run first either.
    */
   specs: [
     "./e2e/sales-flow.e2e.ts",
@@ -181,6 +185,7 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
     "./e2e/lot-expiry-flow.e2e.ts",
     "./e2e/users-flow.e2e.ts",
     "./e2e/tenant-config-flow.e2e.ts",
+    "./e2e/cash-shift-flow.e2e.ts",
   ],
 
   // One instance: the app drives a single shared local database and a single

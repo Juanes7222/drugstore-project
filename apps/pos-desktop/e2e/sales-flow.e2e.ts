@@ -42,8 +42,17 @@ import {
   LOT_ACETAMINOFEN,
   LOT_IBUPROFENO,
   fetchLotStocks,
+  type ServerSaleState,
 } from "./server-state";
-import { fetchLocalClients, fetchLocalSyncMetadata } from "./local-state";
+import {
+  fetchLocalClients,
+  fetchLocalSaleDetail,
+  fetchLocalSales,
+  fetchLocalSyncMetadata,
+  fetchLocalSyncQueue,
+  type LocalSaleDetail,
+} from "./local-state";
+import { assertNoDefects, reconcileRow } from "./reconcile";
 
 // `describe` / `it` / `beforeEach` are Mocha globals injected by the WDIO runner.
 /* global describe, it, beforeEach */
@@ -67,12 +76,189 @@ const IBUPROFENO = "Ibuprofeno 400mg";
 const ACETAMINOFEN_TOTAL = 595;
 const IBUPROFENO_TOTAL = 476;
 
+/**
+ * Item ordering key, used on BOTH sides before the comparison.
+ *
+ * The two stores return their rows in different orders — the server's item
+ * query joins the lots, which reorders them — so an index-based comparison
+ * without a common order would report differences that are only ordering.
+ * A cart cannot hold the same product twice at the same price, so the pair
+ * identifies a line.
+ */
+function itemKey(item: {
+  commercialName: string;
+  quantity: number;
+  unitPrice: number;
+}): string {
+  return `${item.commercialName}|${item.quantity}|${item.unitPrice}`;
+}
+
+/** The comparable shape of a sale, whichever store it was read from. */
+interface ComparableSale {
+  operationalState: string;
+  subtotal: number;
+  totalDiscount: number;
+  totalTax: number;
+  totalAmount: number;
+  changeAmount: number;
+  cashShiftId: string;
+  clientIdentificationNumber: string | null;
+  clientName: string | null;
+  items: Array<{
+    commercialName: string;
+    quantity: number;
+    unitPrice: number;
+    discountPercentage: number;
+    discountAmount: number;
+    discountReason: string | null;
+    /** Lot assignment as "lotId×quantity" pairs. */
+    lots: string;
+  }>;
+  payments: Array<{
+    methodName: string;
+    category: string;
+    amount: number;
+    isCash: boolean;
+  }>;
+}
+
+/** The POS's own sale, in the comparable shape. */
+function comparableLocal(sale: LocalSaleDetail): ComparableSale {
+  return {
+    operationalState: sale.operationalState,
+    subtotal: sale.subtotal,
+    totalDiscount: sale.totalDiscount,
+    totalTax: sale.totalTax,
+    totalAmount: sale.totalAmount,
+    changeAmount: sale.changeAmount,
+    cashShiftId: sale.cashShiftId,
+    clientIdentificationNumber: sale.clientIdentificationNumber,
+    clientName: sale.clientName,
+    items: sale.items.map((item) => ({
+      commercialName: item.commercialName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discountPercentage: item.discountPercentage,
+      discountAmount: item.discountAmount,
+      discountReason: item.discountReason,
+      lots: item.lots,
+    })),
+    payments: sale.payments.map((payment) => ({ ...payment })),
+  };
+}
+
+/**
+ * The server's sale, in the comparable shape.
+ *
+ * The product id is deliberately NOT part of it: the POS's local uuid and the
+ * server's own id are two names for the same row, exactly like the `id` of
+ * the sale itself.
+ */
+function comparableServer(sale: ServerSaleState): ComparableSale {
+  return {
+    operationalState: sale.operationalState,
+    subtotal: sale.subtotal,
+    totalDiscount: sale.totalDiscount,
+    totalTax: sale.totalTax,
+    totalAmount: sale.totalAmount,
+    changeAmount: sale.changeAmount,
+    cashShiftId: sale.cashShiftId,
+    clientIdentificationNumber: sale.client?.identificationNumber ?? null,
+    clientName: sale.client?.fullName ?? null,
+    items: sale.items.map((item) => ({
+      commercialName: item.commercialName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      discountPercentage: item.discountPercentage,
+      discountAmount: item.discountAmount,
+      discountReason: item.discountReason,
+      lots: item.lots.map((lot) => `${lot.lotId}×${lot.quantity}`).join(","),
+    })),
+    payments: sale.payments.map((payment) => ({ ...payment })),
+  };
+}
+
+/**
+ * Flatten a sale into comparable fields.
+ *
+ * The POS's own row and the server's row are two projections of the same
+ * sale, and the reconcile walks the union of their keys — so a field nobody
+ * thought to assert is exactly the one that gets reported.
+ */
+function flattenSale(sale: ComparableSale): Record<string, unknown> {
+  const flat: Record<string, unknown> = {
+    operationalState: sale.operationalState,
+    subtotal: sale.subtotal,
+    totalDiscount: sale.totalDiscount,
+    totalTax: sale.totalTax,
+    totalAmount: sale.totalAmount,
+    changeAmount: sale.changeAmount,
+    cashShiftId: sale.cashShiftId,
+    "client.identificationNumber": sale.clientIdentificationNumber,
+    "client.fullName": sale.clientName,
+  };
+
+  const items = [...sale.items].sort((a, b) =>
+    itemKey(a).localeCompare(itemKey(b)),
+  );
+  items.forEach((item, index) => {
+    const prefix = `item[${index}]`;
+    flat[`${prefix}.commercialName`] = item.commercialName;
+    flat[`${prefix}.quantity`] = item.quantity;
+    flat[`${prefix}.unitPrice`] = item.unitPrice;
+    flat[`${prefix}.discountPercentage`] = item.discountPercentage;
+    flat[`${prefix}.discountAmount`] = item.discountAmount;
+    flat[`${prefix}.discountReason`] = item.discountReason;
+    flat[`${prefix}.lots`] = item.lots;
+  });
+
+  // Paired by NAME, not by position: the two stores order their payment
+  // methods by their own `sortOrder`, which is not guaranteed to be the same
+  // set of rows.
+  const payments = [...sale.payments].sort((a, b) =>
+    a.methodName.localeCompare(b.methodName),
+  );
+  payments.forEach((payment, index) => {
+    const prefix = `payment[${index}]`;
+    flat[`${prefix}.methodName`] = payment.methodName;
+    flat[`${prefix}.category`] = payment.category;
+    flat[`${prefix}.amount`] = payment.amount;
+    flat[`${prefix}.isCash`] = payment.isCash;
+  });
+
+  return flat;
+}
+
+/** The money fields of a flattened sale, compared to the cent and never as text. */
+function moneyFields(sale: ComparableSale): string[] {
+  const fields = [
+    "subtotal",
+    "totalDiscount",
+    "totalTax",
+    "totalAmount",
+    "changeAmount",
+  ];
+  [...sale.items]
+    .sort((a, b) => itemKey(a).localeCompare(itemKey(b)))
+    .forEach((_, index) => {
+      fields.push(
+        `item[${index}].unitPrice`,
+        `item[${index}].discountPercentage`,
+        `item[${index}].discountAmount`,
+      );
+    });
+  sale.payments.forEach((_, index) => {
+    fields.push(`payment[${index}].amount`);
+  });
+  return fields;
+}
+
 describe("Sales flow (real Tauri app against the real backend)", () => {
   beforeEach(async () => {
     resetForSpec();
   });
 
-  it("E2E-S01: cash sale is replayed server-side with stock and fiscal document", async () => {
+  it("E2E-S01: cash sale is written locally and replayed server-side with stock and fiscal document", async () => {
     await login(CASHIER.identifier, CASHIER.password);
     const baseline = await fetchLatestLocalNumber();
     const stockBefore = await fetchLotStocks();
@@ -115,6 +301,62 @@ describe("Sales flow (real Tauri app against the real backend)", () => {
     expect(sale.fiscal).not.toBeNull();
     expect(sale.fiscal?.documentType).toBe("INVOICE");
     expect(sale.fiscal?.fullNumber).toMatch(/^POSE2E/);
+
+    // ---- Local mirror: the sale the cashier refunds and re-prints ---------
+    //
+    // The server's row is the far copy; the POS's own row is what the returns
+    // screen reads, what the receipt re-prints and what the shift's arqueo
+    // counts. None of the server-side assertions above can see it, so a sale
+    // that reached the server but was written wrong locally — a missing lot
+    // assignment, a payment row that never landed, a change of 0 — would pass
+    // every other spec in this suite.
+    const local = await fetchLocalSaleDetail(sale.localNumber);
+    if (!local) {
+      throw new Error(
+        "the POS never wrote the sale to its own database. Local sales: " +
+          `${JSON.stringify(await fetchLocalSales())}`,
+      );
+    }
+
+    const localComparable = comparableLocal(local);
+    const rules: Record<string, { kind: "money" }> = {};
+    for (const field of moneyFields(localComparable)) {
+      rules[field] = { kind: "money" };
+    }
+
+    assertNoDefects(
+      reconcileRow(
+        `Sale ${sale.localNumber}`,
+        flattenSale(localComparable),
+        flattenSale(comparableServer(sale)),
+        rules,
+      ),
+      "sale local/server mirror S01",
+    );
+
+    // ---- Local outbox: the entry that carried this sale is COMPLETED ------
+    //
+    // The server's SyncQueue row says the server accepted the operation; the
+    // POS's own row says the register stopped owing it. A POS that marked the
+    // entry COMPLETED without the server having accepted it — or that left it
+    // PENDING for ever — is a sale the cashier believes is saved and is not.
+    const queue = await fetchLocalSyncQueue("SALE_CONFIRMATION");
+    const saleEntry = [...queue].reverse().find((row) => {
+      try {
+        return (
+          JSON.parse(row.payload)?.metadata?.localNumber === sale.localNumber
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (!saleEntry) {
+      throw new Error(
+        `the POS never queued a SALE_CONFIRMATION for local number ` +
+          `${sale.localNumber}. Local queue: ${JSON.stringify(queue)}`,
+      );
+    }
+    expect(saleEntry.status).toBe("COMPLETED");
   });
 
   it("E2E-S02: multi-item sale totals, item rows and both lots are correct server-side", async () => {

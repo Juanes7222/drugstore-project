@@ -440,12 +440,12 @@ export class CashShiftService {
     // enforced by `assertNoOpenShiftExists` (open) / single OPEN
     // row check — clientSequence stays per-workstation by design.
     //
-    // SHIFT_OPEN is intentionally NOT enqueued: SyncOperationType
-    // on both local and server schemas has no SHIFT_OPEN value;
-    // the server's `ensureGlobalShiftAttribution` bootstraps a
-    // new OPEN shift when the next SALE_CONFIRMATION lands, so the
-    // next sale after a close implicitly creates the following
-    // shift server-side without a dedicated operation.
+    // The matching `SHIFT_OPEN` IS enqueued when the shift is opened
+    // (see `openShift` above): the server's `handleShiftOpen` creates
+    // the row under the POS's own shift id, so both stores hold the SAME
+    // shift and a sale's `cashShiftId` means the same thing on either
+    // side. The server's `ensureGlobalShiftAttribution` is the fallback
+    // for the case where the sale lands before that open did.
     const now = new Date();
     const payloadObj = {
       userId: session.userId,

@@ -246,15 +246,16 @@ export const CashShiftPage: FC = () => {
 
   const handleStartClose = useCallback(async () => {
     if (!currentShift) return;
-    setCloseWizard({
-      step: 'summary',
-      data: {
-        transactionCount: 0,
-        totalSalesAmount: '0',
-        openingBalance: '0',
-        totalsByPaymentMethod: [],
-      },
-    });
+    // The summary is computed asynchronously — it resolves the operational
+    // view of every invoice in the shift — so the wizard waits in a loading
+    // state until the numbers are real.
+    //
+    // It used to render an EMPTY summary and enable "Siguiente" right away.
+    // A cashier who advanced before the totals arrived got pulled BACK to
+    // the summary when they did: the resolution overwrote the step the user
+    // was on, and the count step they had reached was the empty one. The
+    // e2e suite hit it on every close.
+    setCloseWizard({ step: 'loading-summary' });
     try {
       // The drift comparison already computed the operational totals for
       // this shift — reuse them so the wizard does not re-run the
@@ -404,6 +405,13 @@ export const CashShiftPage: FC = () => {
                 isSubmitting={isSubmitting}
                 drift={driftComparison}
               />
+            )}
+            {closeWizard.step === 'loading-summary' && (
+              <div className="flex items-center justify-center py-pos-xl">
+                <p className="text-body-sm" style={{ color: 'var(--color-ink-muted)' }}>
+                  {t('common.loading')}
+                </p>
+              </div>
             )}
             {closeWizard.step === 'summary' && (
               <SummaryStep

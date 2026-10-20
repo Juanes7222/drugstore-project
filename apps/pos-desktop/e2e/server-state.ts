@@ -113,6 +113,8 @@ export interface ServerSaleState {
   totalTax: number;
   totalAmount: number;
   changeAmount: number;
+  /** The shift the sale is booked into — the store-wide one, in the global model. */
+  cashShiftId: string;
   client: {
     identificationNumber: string | null;
     fullName: string | null;
@@ -150,12 +152,13 @@ export async function fetchServerSale(
     totalTax: string;
     totalAmount: string;
     changeAmount: string;
+    cashShiftId: string;
     receivedAt: Date | null;
     clientIdentificationNumber: string | null;
     clientName: string | null;
   }>(
     `SELECT id, "localNumber", "operationalState", subtotal, "totalDiscount",
-            "totalTax", "totalAmount", "changeAmount",
+            "totalTax", "totalAmount", "changeAmount", "cashShiftId",
             "clientIdentificationNumberSnapshot" AS "clientIdentificationNumber",
             "clientNameSnapshot" AS "clientName"
        FROM "Sale"
@@ -247,6 +250,7 @@ export async function fetchServerSale(
     totalTax: Number(sale.totalTax),
     totalAmount: Number(sale.totalAmount),
     changeAmount: Number(sale.changeAmount),
+    cashShiftId: sale.cashShiftId,
     client: sale.clientIdentificationNumber
       ? {
           identificationNumber: sale.clientIdentificationNumber,
@@ -1804,4 +1808,119 @@ export async function queryServerRaw<
   T extends import("pg").QueryResultRow = import("pg").QueryResultRow,
 >(sql: string, params: unknown[] = []): Promise<T[]> {
   return query<T>(sql, params);
+}
+
+// ---------------------------------------------------------------------------
+// Cash shift
+// ---------------------------------------------------------------------------
+
+export interface ServerCashShift {
+  id: string;
+  state: string;
+  workstationId: string;
+  userId: string;
+  openingBalance: number;
+  expectedClosingAmount: number;
+  actualClosingAmount: number;
+  closingDifference: number;
+  closedAt: string | null;
+  forcedClose: boolean;
+  /** The closing cash counts the shift was closed with. */
+  cashCounts: Array<{
+    countType: string;
+    expectedAmount: number;
+    declaredAmount: number;
+  }>;
+}
+
+/**
+ * The server's own row for a cash shift, with its closing counts.
+ *
+ * The shift is store-wide and the POS keeps the SAME id on both sides: the
+ * `SHIFT_OPEN` replay creates the server row under the POS's own shift id, so
+ * the two stores' shifts are one row seen twice. A sale's `cashShiftId` is
+ * therefore the join key between the POS's book and the server's.
+ */
+export async function fetchServerCashShift(
+  shiftId: string,
+): Promise<ServerCashShift | null> {
+  const rows = await query<{
+    id: string;
+    state: string;
+    workstationId: string;
+    userId: string;
+    openingBalance: string;
+    expectedClosingAmount: string;
+    actualClosingAmount: string;
+    closingDifference: string;
+    closedAt: Date | null;
+    forcedClose: boolean;
+  }>(
+    `SELECT id, state, "workstationId", "userId", "openingBalance",
+            "expectedClosingAmount", "actualClosingAmount", "closingDifference",
+            "closedAt", "forcedClose"
+       FROM "CashShift"
+      WHERE id = $1`,
+    [shiftId],
+  );
+
+  const shift = rows[0];
+  if (!shift) return null;
+
+  const counts = await query<{
+    countType: string;
+    expectedAmount: string;
+    declaredAmount: string;
+  }>(
+    `SELECT "countType", "expectedAmount", "declaredAmount"
+       FROM "ShiftCashCount"
+      WHERE "cashShiftId" = $1
+      ORDER BY "countType", "paymentMethodId"`,
+    [shiftId],
+  );
+
+  return {
+    id: shift.id,
+    state: shift.state,
+    workstationId: shift.workstationId,
+    userId: shift.userId,
+    openingBalance: Number(shift.openingBalance),
+    expectedClosingAmount: Number(shift.expectedClosingAmount),
+    actualClosingAmount: Number(shift.actualClosingAmount),
+    closingDifference: Number(shift.closingDifference),
+    closedAt: shift.closedAt ? shift.closedAt.toISOString() : null,
+    forcedClose: shift.forcedClose,
+    cashCounts: counts.map((row) => ({
+      countType: row.countType,
+      expectedAmount: Number(row.expectedAmount),
+      declaredAmount: Number(row.declaredAmount),
+    })),
+  };
+}
+
+/**
+ * Wait for the server's copy of a shift to reach a state.
+ *
+ * The `SHIFT_OPEN` / `SHIFT_CLOSURE` operations are replayed on the server's
+ * own cron tick, so the row appears a few seconds after the POS wrote it.
+ */
+export async function waitForServerCashShift(
+  shiftId: string,
+  state: string,
+  timeoutMs = 120_000,
+): Promise<ServerCashShift> {
+  const deadline = Date.now() + timeoutMs;
+  let last: ServerCashShift | null = null;
+
+  while (Date.now() < deadline) {
+    last = await fetchServerCashShift(shiftId);
+    if (last && last.state === state) return last;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `the server's shift ${shiftId} never reached state ${state}. ` +
+      `Last seen: ${JSON.stringify(last)}. ` +
+      `Sync queue: ${await describeSyncQueue()}`,
+  );
 }

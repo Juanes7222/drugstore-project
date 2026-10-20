@@ -12,11 +12,16 @@
  * spec that "logs in" as a different role silently keeps the previous user's
  * session — exactly the kind of false green this suite exists to eliminate.
  *
- * Deliberately no query helper: reading the local database would need async
- * script execution, and this suite deliberately avoids `executeAsyncScript`
- * (see the note at the top of e2e/helpers.ts). Everything worth asserting after
- * a flow is asserted against the real backend instead, which is the stronger
- * check anyway.
+ * The readers below exist for one reason: a flow that is correct on the server
+ * can still be WRONG in the POS's own database. The server is the far copy;
+ * the local row is the one the cashier refunds against, re-prints and
+ * reconciles. So the suite asserts both sides and reconciles them field by
+ * field (see `reconcile.ts`).
+ *
+ * `queryLocal` is the one place in the suite that uses `executeAsyncScript`:
+ * `__db.query` is async and the synchronous `browser.execute` cannot await it.
+ * It is a handful of calls per spec, not the flood that made async execution
+ * time out before (see the note at the top of e2e/helpers.ts).
  */
 import { browser } from "@wdio/globals";
 
@@ -184,6 +189,276 @@ export async function fetchLocalSyncMetadata(): Promise<
 }
 
 // ---------------------------------------------------------------------------
+// Sale mirror
+// ---------------------------------------------------------------------------
+
+export interface LocalSaleItem {
+  productId: string;
+  commercialName: string;
+  quantity: number;
+  unitPrice: number;
+  discountPercentage: number;
+  discountAmount: number;
+  discountReason: string | null;
+  /** Lot assignment, as "lotId×quantity" pairs sorted by lot id. */
+  lots: string;
+}
+
+export interface LocalSalePayment {
+  methodName: string;
+  category: string;
+  amount: number;
+  isCash: boolean;
+}
+
+export interface LocalSaleDetail {
+  localNumber: number;
+  operationalState: string;
+  subtotal: number;
+  totalDiscount: number;
+  totalTax: number;
+  totalAmount: number;
+  changeAmount: number;
+  cashShiftId: string;
+  clientIdentificationNumber: string | null;
+  clientName: string | null;
+  items: LocalSaleItem[];
+  payments: LocalSalePayment[];
+}
+
+/**
+ * The POS's own copy of a sale, projected the way `fetchServerSale` projects
+ * the server's row so the two can be compared field by field.
+ *
+ * The server's row is the far copy; this one is what the cashier refunds
+ * against, re-prints and reconciles. A sale that reached the server but was
+ * written wrong here — a missing lot assignment, a payment row that never
+ * landed, a change amount of 0 — is invisible to every server-side assertion
+ * in the suite, and it breaks the flows that read the local row.
+ */
+export async function fetchLocalSaleDetail(
+  localNumber: number,
+): Promise<LocalSaleDetail | null> {
+  const header = await queryLocal<{
+    localNumber: string;
+    operationalState: string;
+    subtotal: string;
+    totalDiscount: string;
+    totalTax: string;
+    totalAmount: string;
+    changeAmount: string;
+    cashShiftId: string;
+    clientIdentificationNumber: string | null;
+    clientName: string | null;
+  }>(
+    `SELECT "localNumber", "operationalState", subtotal, "totalDiscount",
+            "totalTax", "totalAmount", "changeAmount", "cashShiftId",
+            "clientIdentificationNumberSnapshot" AS "clientIdentificationNumber",
+            "clientNameSnapshot" AS "clientName"
+       FROM "Sale"
+      WHERE "localNumber" = $1`,
+    [String(localNumber)],
+  );
+
+  const sale = header[0];
+  if (!sale) return null;
+
+  const itemRows = await queryLocal<{
+    productId: string;
+    commercialName: string;
+    quantity: number;
+    unitPrice: string;
+    discountPercentage: string;
+    discountAmount: string;
+    discountReason: string | null;
+    lotId: string | null;
+    lotQuantity: number | null;
+  }>(
+    `SELECT si."productId", si."productCommercialNameSnapshot" AS "commercialName",
+            si.quantity, si."unitPrice", si."discountPercentage",
+            si."discountAmount", si."discountReason",
+            sil."lotId", sil.quantity AS "lotQuantity"
+       FROM "SaleItem" si
+       LEFT JOIN "SaleItemLot" sil ON sil."saleItemId" = si.id
+      WHERE si."saleId" = (SELECT id FROM "Sale" WHERE "localNumber" = $1)
+      ORDER BY si.id, sil."lotId" NULLS FIRST`,
+    [String(localNumber)],
+  );
+
+  const paymentRows = await queryLocal<{
+    methodName: string;
+    category: string;
+    amount: string;
+    isCash: boolean;
+  }>(
+    `SELECT pm.name AS "methodName", pm.category, sp.amount, pm."isCash"
+       FROM "SalePayment" sp
+       JOIN "PaymentMethod" pm ON pm.id = sp."paymentMethodId"
+      WHERE sp."saleId" = (SELECT id FROM "Sale" WHERE "localNumber" = $1)`,
+    [String(localNumber)],
+  );
+
+  // Items are grouped by their item row: one item can draw from several lots,
+  // and the assignment set is part of what the two stores must agree on.
+  const items = new Map<string, LocalSaleItem>();
+  for (const row of itemRows) {
+    const key = `${row.productId}|${row.commercialName}|${row.quantity}`;
+    let item = items.get(key);
+    if (!item) {
+      item = {
+        productId: row.productId,
+        commercialName: row.commercialName,
+        quantity: Number(row.quantity),
+        unitPrice: Number(row.unitPrice),
+        discountPercentage: Number(row.discountPercentage),
+        discountAmount: Number(row.discountAmount),
+        discountReason: row.discountReason,
+        lots: "",
+      };
+      items.set(key, item);
+    }
+    if (row.lotId) {
+      const pair = `${row.lotId}×${Number(row.lotQuantity ?? 0)}`;
+      item.lots = item.lots ? `${item.lots},${pair}` : pair;
+    }
+  }
+
+  return {
+    localNumber: Number(sale.localNumber),
+    operationalState: sale.operationalState,
+    subtotal: Number(sale.subtotal),
+    totalDiscount: Number(sale.totalDiscount),
+    totalTax: Number(sale.totalTax),
+    totalAmount: Number(sale.totalAmount),
+    changeAmount: Number(sale.changeAmount),
+    cashShiftId: sale.cashShiftId,
+    clientIdentificationNumber: sale.clientIdentificationNumber,
+    clientName: sale.clientName,
+    items: [...items.values()],
+    // Paired with the server's rows by NAME, not by position: the two stores
+    // order payment methods by their own `sortOrder`, which is not guaranteed
+    // to be the same set of rows.
+    payments: paymentRows
+      .map((row) => ({
+        methodName: row.methodName,
+        category: row.category,
+        amount: Number(row.amount),
+        isCash: row.isCash,
+      }))
+      .sort((a, b) => a.methodName.localeCompare(b.methodName)),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cash shift
+// ---------------------------------------------------------------------------
+
+export interface LocalCashShift {
+  id: string;
+  state: string;
+  workstationId: string;
+  userId: string;
+  openingBalance: number;
+  expectedClosingAmount: number;
+  actualClosingAmount: number;
+  closingDifference: number;
+  /** The closing cash counts the shift was closed with. */
+  cashCounts: Array<{
+    countType: string;
+    expectedAmount: number;
+    declaredAmount: number;
+  }>;
+}
+
+interface LocalCashShiftRow {
+  id: string;
+  state: string;
+  workstationId: string;
+  userId: string;
+  openingBalance: string;
+  expectedClosingAmount: string;
+  actualClosingAmount: string;
+  closingDifference: string;
+}
+
+function toLocalCashShift(
+  row: LocalCashShiftRow,
+  cashCounts: LocalCashShift["cashCounts"],
+): LocalCashShift {
+  return {
+    id: row.id,
+    state: row.state,
+    workstationId: row.workstationId,
+    userId: row.userId,
+    openingBalance: Number(row.openingBalance),
+    expectedClosingAmount: Number(row.expectedClosingAmount),
+    actualClosingAmount: Number(row.actualClosingAmount),
+    closingDifference: Number(row.closingDifference),
+    cashCounts,
+  };
+}
+
+/**
+ * The POS's own open cash shift, or null when the store has none open.
+ *
+ * The shift is store-wide: it may have been opened at another workstation, and
+ * the POS mirrors the server's row when it adopts one. Either way this is the
+ * row the sale is booked into, so it is what a sale's `cashShiftId` must
+ * match.
+ */
+export async function fetchLocalOpenShift(): Promise<LocalCashShift | null> {
+  const rows = await queryLocal<LocalCashShiftRow>(
+    `SELECT id, state, "workstationId", "userId", "openingBalance",
+            "expectedClosingAmount", "actualClosingAmount", "closingDifference"
+       FROM "CashShift"
+      WHERE state = 'OPEN'
+      ORDER BY "openedAt" DESC
+      LIMIT 1`,
+  );
+  const shift = rows[0];
+  if (!shift) return null;
+  return toLocalCashShift(shift, await fetchLocalCashCounts(shift.id));
+}
+
+/** The POS's own row for a shift, whatever its state. */
+export async function fetchLocalCashShift(
+  shiftId: string,
+): Promise<LocalCashShift | null> {
+  const rows = await queryLocal<LocalCashShiftRow>(
+    `SELECT id, state, "workstationId", "userId", "openingBalance",
+            "expectedClosingAmount", "actualClosingAmount", "closingDifference"
+       FROM "CashShift"
+      WHERE id = $1`,
+    [shiftId],
+  );
+  const shift = rows[0];
+  if (!shift) return null;
+  return toLocalCashShift(shift, await fetchLocalCashCounts(shiftId));
+}
+
+/** The closing cash counts the POS registered for a shift. */
+async function fetchLocalCashCounts(
+  shiftId: string,
+): Promise<LocalCashShift["cashCounts"]> {
+  const rows = await queryLocal<{
+    countType: string;
+    expectedAmount: string;
+    declaredAmount: string;
+  }>(
+    `SELECT "countType", "expectedAmount", "declaredAmount"
+       FROM "ShiftCashCount"
+      WHERE "cashShiftId" = $1
+      ORDER BY "countType", "paymentMethodId"`,
+    [shiftId],
+  );
+  return rows.map((row) => ({
+    countType: row.countType,
+    expectedAmount: Number(row.expectedAmount),
+    declaredAmount: Number(row.declaredAmount),
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Sync queue
 // ---------------------------------------------------------------------------
 
@@ -204,10 +479,17 @@ export interface LocalSyncQueueRow {
 export async function fetchLocalSyncQueue(
   operationType?: string,
 ): Promise<LocalSyncQueueRow[]> {
+  // The column is an enum, so the comparison is cast to TEXT on both sides.
+  //
+  // Writing `$1::text IS NULL OR "operationType" = $1` instead pins the
+  // parameter to text and leaves the second comparison as enum = text, which
+  // Postgres rejects outright ("operator does not exist: SyncOperationType =
+  // text"). The helper was never called, so the query was never executed and
+  // the mistake sat there unnoticed.
   return queryLocal<LocalSyncQueueRow>(
     `SELECT "operationType", status, payload
        FROM "SyncQueue"
-      WHERE $1::text IS NULL OR "operationType" = $1
+      WHERE $1::text IS NULL OR "operationType"::text = $1
       ORDER BY "clientSequence"`,
     [operationType ?? null],
   );
