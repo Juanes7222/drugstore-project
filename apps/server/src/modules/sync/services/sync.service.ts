@@ -24,6 +24,31 @@ export interface BatchOperationResult {
   entityInternalCode?: string;
 }
 
+/**
+ * The origin workstation an operation payload carries.
+ *
+ * Every business payload records the station that created the entity: the
+ * sale carries it in `metadata.sourceWorkstationId`, the rest in
+ * `metadata.workstationId`, and a couple in a top-level `workstationId`. Only
+ * the originating station knows its own identity, so this is the only place
+ * the origin can come from.
+ */
+function extractOriginWorkstationId(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, any>;
+  const metadata =
+    record.metadata && typeof record.metadata === "object"
+      ? (record.metadata as Record<string, any>)
+      : {};
+  const candidate =
+    metadata.sourceWorkstationId ??
+    metadata.workstationId ??
+    record.workstationId;
+  return typeof candidate === "string" && candidate.length > 0
+    ? candidate
+    : null;
+}
+
 @Injectable()
 export class SyncService {
   constructor(
@@ -168,6 +193,13 @@ export class SyncService {
       return { operationUuid: op.operationUuid, status: 'REJECTED', error: 'PAYLOAD_HASH_MISMATCH' };
     }
 
+    // A relayed operation is filed under the station that ORIGINATED it, not
+    // under the station that delivered it.
+    const originWorkstationId = await this.resolveOriginWorkstationId(
+      op,
+      sourceWorkstationId,
+    );
+
     // Each operation is savepoint-isolated so a DB error (e.g. RLS violation,
     // P2002, enum validation) inside one op does not abort the outer
     // TenantContextInterceptor batch transaction (25P02). Without a savepoint,
@@ -176,10 +208,10 @@ export class SyncService {
     const savepoint = `sp_ingest_${op.operationUuid.replace(/-/g, '').slice(0, 16)}`;
     await this.prisma.$executeRawUnsafe(`SAVEPOINT "${savepoint}"`);
     try {
-      const entryId = await this.createQueueEntry(op, sourceWorkstationId);
+      const entryId = await this.createQueueEntry(op, originWorkstationId);
 
       if (this.IMMEDIATE_DISPATCH_TYPES.has(op.operationType)) {
-        const dispatchResult = await this.tryImmediateDispatch(entryId, op, sourceWorkstationId);
+        const dispatchResult = await this.tryImmediateDispatch(entryId, op, originWorkstationId);
         if (
           dispatchResult !== null &&
           this.CREATION_TYPES.has(op.operationType)
@@ -356,6 +388,51 @@ export class SyncService {
       // The savepoint may already be gone if the connection itself failed;
       // the caller's error is more informative than this one.
     }
+  }
+
+  /**
+   * The workstation an operation is FILED UNDER.
+   *
+   * For a direct push that is the authenticated station — the body never
+   * gets to say who is pushing.
+   *
+   * For an operation that arrived through the store's LAN hub it is the
+   * station that ORIGINATED it. The delivering station is a courier: it
+   * holds a copy of somebody else's operation because the origin could not
+   * reach the server, and filing the operation under the courier would put
+   * the origin's sale in the wrong numbering scope, leave a gap in the
+   * origin's history, and make the origin's own later push be deduplicated
+   * away as "already accepted" — so the sale would exist once, under the
+   * wrong station.
+   *
+   * The origin travels in the payload (only the station that created the
+   * entity knows its own identity), and it is honoured only when the
+   * operation is marked as hub-relayed AND the claimed workstation really
+   * belongs to this tenant. Anything else keeps the authenticated station.
+   */
+  private async resolveOriginWorkstationId(
+    op: any,
+    authenticatedWorkstationId: string,
+  ): Promise<string> {
+    if (op.source !== 'LOCAL_HUB') return authenticatedWorkstationId;
+
+    const claimed = extractOriginWorkstationId(op.payload);
+    if (!claimed || claimed === authenticatedWorkstationId) {
+      return authenticatedWorkstationId;
+    }
+
+    // A workstation is not tenant-scoped by itself — the store it belongs to
+    // is the one that has signed in on it. A claim is only honoured when the
+    // station has signed in on this tenant's behalf; anything else keeps the
+    // authenticated station, which is the safe answer.
+    const belongsToTenant = await this.prisma.userSession.findFirst({
+      where: {
+        workstationId: claimed,
+        user: { subscriptionId: this.tenantContext.getSubscriptionId() },
+      },
+      select: { id: true },
+    });
+    return belongsToTenant ? claimed : authenticatedWorkstationId;
   }
 
   /**

@@ -1,4 +1,7 @@
 import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+// Node's crypto, not the WebCrypto global: the service hashes the payload
+// with `crypto.createHash` and the spec has to hash it the same way.
+import { createHash } from 'crypto';
 
 // Enum values come from the real generated client via the shared helper,
 // so they cannot drift when the schema changes.
@@ -23,6 +26,11 @@ const mockSyncQueue = {
 
 const mockPrisma = {
   syncQueue: mockSyncQueue,
+  // A workstation belongs to a tenant through the sessions signed in on it:
+  // that is what tells a claimed origin apart from a station of another store.
+  userSession: {
+    findFirst: jest.fn(),
+  },
   // Savepoint bookkeeping: the service scopes immediate dispatch and permanent
   // failures with SAVEPOINT / ROLLBACK TO SAVEPOINT on the request's pinned
   // connection, because a nested $transaction() runs on a different connection
@@ -248,6 +256,78 @@ describe('SyncService', () => {
         error: 'PAYLOAD_HASH_MISMATCH',
       });
       expect(mockSyncQueue.create).not.toHaveBeenCalled();
+    });
+
+    /**
+     * An operation that arrived through the store's LAN hub belongs to the
+     * station that ORIGINATED it, not to the station that delivered it: the
+     * delivering station is a courier, and filing the operation under it
+     * would put the origin's sale in the wrong numbering scope.
+     */
+    describe('hub-relayed operations', () => {
+      const hashOf = (payload: unknown): string =>
+        createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+
+      const relayedBatch = (payload: Record<string, unknown>, source?: string) => ({
+        operations: [
+          {
+            operationUuid: 'op-relayed',
+            operationType: 'SALE_CONFIRMATION',
+            payload,
+            payloadHash: hashOf(payload),
+            clientSequence: 1,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+            ...(source ? { source } : {}),
+          },
+        ],
+      });
+
+      it('files a relayed operation under the station that originated it', async () => {
+        mockSyncQueue.create.mockResolvedValue({ id: 'entry-1' });
+        (mockPrisma as any).userSession.findFirst.mockResolvedValue({ id: 'sess-1' });
+
+        await service.receiveBatch(
+          relayedBatch({ metadata: { sourceWorkstationId: 'ws-origin' } }, 'LOCAL_HUB'),
+          'ws-courier',
+        );
+
+        expect(mockSyncQueue.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ sourceWorkstationId: 'ws-origin' }),
+          }),
+        );
+      });
+
+      it('keeps the authenticated station when the claimed origin is not one of ours', async () => {
+        mockSyncQueue.create.mockResolvedValue({ id: 'entry-1' });
+        (mockPrisma as any).userSession.findFirst.mockResolvedValue(null);
+
+        await service.receiveBatch(
+          relayedBatch({ metadata: { sourceWorkstationId: 'ws-stranger' } }, 'LOCAL_HUB'),
+          'ws-courier',
+        );
+
+        expect(mockSyncQueue.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ sourceWorkstationId: 'ws-courier' }),
+          }),
+        );
+      });
+
+      it('never takes the origin from the body of a direct push', async () => {
+        mockSyncQueue.create.mockResolvedValue({ id: 'entry-1' });
+
+        await service.receiveBatch(
+          relayedBatch({ metadata: { sourceWorkstationId: 'ws-origin' } }),
+          'ws-direct',
+        );
+
+        expect(mockSyncQueue.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ sourceWorkstationId: 'ws-direct' }),
+          }),
+        );
+      });
     });
 
     it('returns ALREADY_ACCEPTED for duplicate operationUuid', async () => {

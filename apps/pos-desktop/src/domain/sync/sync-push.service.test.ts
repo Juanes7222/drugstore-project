@@ -260,11 +260,79 @@ describe("SyncPushService", () => {
       vi.unstubAllGlobals();
     });
 
-    it("classifies 409 as CONFLICT and 422 as VALIDATION", async () => {
+    it("classifies 409 as CONFLICT and 422 as VALIDATION", () => {
       expect(classifyFailure(409, "Conflict - already exists")).toBe("CONFLICT");
       expect(classifyFailure(422, "Validation error: invalid field")).toBe("VALIDATION");
       expect(classifyFailure(null, "")).toBe("NETWORK");
       expect(classifyFailure(401, "Unauthorized")).toBe("AUTH");
+    });
+  });
+
+  /**
+   * The LAN relay copies a peer's operation into this station's outbox with
+   * the ORIGIN's `sourceWorkstationId` — that is what makes the copy a
+   * faithful relay of somebody else's work.
+   *
+   * The server has to be told, or it files the relayed sale under the station
+   * that DELIVERED it: the origin's history loses the sale, and the origin's
+   * own later push is deduplicated away as "already accepted".
+   */
+  describe("preparePush — hub-relayed entries", () => {
+    it("marks an entry adopted from another station as LOCAL_HUB", async () => {
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([
+          makePendingEntry({ sourceWorkstationId: "ws-other" }),
+        ])
+        .mockResolvedValueOnce([]);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        workstationId: "ws-mine",
+      });
+
+      const prepared = await service.preparePush();
+      const operations = prepared.operations as Array<{ source?: string }>;
+      expect(operations).toHaveLength(1);
+      expect(operations[0].source).toBe("LOCAL_HUB");
+    });
+
+    it("leaves this station's own entries unmarked", async () => {
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([
+          makePendingEntry({ sourceWorkstationId: "ws-mine" }),
+        ])
+        .mockResolvedValueOnce([]);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        workstationId: "ws-mine",
+      });
+
+      const prepared = await service.preparePush();
+      const operations = prepared.operations as Array<{ source?: string }>;
+      expect(operations[0].source).toBeUndefined();
+    });
+
+    it("marks nothing when the station is unknown", async () => {
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([
+          makePendingEntry({ sourceWorkstationId: "ws-other" }),
+        ])
+        .mockResolvedValueOnce([]);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      const prepared = await service.preparePush();
+      const operations = prepared.operations as Array<{ source?: string }>;
+      // Without knowing which station this is, every entry would look
+      // foreign — and a false LOCAL_HUB would send the server looking for an
+      // origin that is not there.
+      expect(operations[0].source).toBeUndefined();
     });
   });
 

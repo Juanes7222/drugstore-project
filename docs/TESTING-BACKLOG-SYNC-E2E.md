@@ -3,11 +3,12 @@
 **Created:** 2026-09-22
 **Scope:** Remaining tests to complete full production-confidence coverage of the
 offline-first sync system (POS ↔ server hub ↔ fiscal engine).
-**Current state:** 18 integration specs / 73 tests green (`apps/pos-desktop`,
-vitest) — includes the 6 specs written from this backlog (see §2). Verified
-twice consecutively against the persistent test DB (18/18 specs, 73/73 tests
-both runs). Unit suites: 51/51 dispatcher, 28/28 supplier-returns,
-47/47 sync-push, 151/151 fiscal-engine, full POS vitest 6295+ green.
+**Current state:** 19 integration specs / 80 tests green (`apps/pos-desktop`,
+vitest) — includes the 6 specs written from this backlog (see §2) and the LAN
+relay spec (`pos-lan-relay`, see §1). Verified twice consecutively against the
+persistent test DB (19/19 specs, 80/80 tests both runs). Unit suites: 51/51
+dispatcher, 28/28 supplier-returns, 47/47 sync-push, 151/151 fiscal-engine,
+full POS vitest 6420/6420 green.
 
 ---
 
@@ -29,6 +30,7 @@ HTTP → real NestJS AppModule → PostgreSQL → server-side replay):
 | Other operation types (shift closure, inventory adjustment, credit payment, etc.) | `pos-other-operations` |
 | Fiscal contingency (sale during `ResolutionExhaustedException`, window expiry) | `pos-fiscal-contingency`, `pos-fiscal-expiry` |
 | **Auto dependency requeue (client + product chains)** | `pos-dependency-requeue` |
+| **LAN relay between two stations (no internet): relay, adoption, no duplicate movements, attribution** | `pos-lan-relay` |
 
 Bugs the integration suite already caught and fixed in production code:
 
@@ -80,6 +82,30 @@ Bugs the integration suite already caught and fixed in production code:
    failed once the whole suite was run. Fixed the mock (OR-aware) and
    rewrote the tests to seed the store; added a regression test that the
    result matched by `saleId` applies to the right invoice.
+10. **A relayed sale was filed under the station that DELIVERED it, not
+    the one that made it.** The server takes `sourceWorkstationId` from
+    the authenticated session ("never from the request body"), so when a
+    peer pushed a peer's operation through the LAN hub — which is exactly
+    what the relay is for — the sale landed in the courier's numbering
+    scope: the origin's history got a hole, the origin's own later push
+    was deduplicated away as `ALREADY_ACCEPTED`, and the origin's mirror
+    ended up showing the sale twice (its own local row plus the pulled
+    one). Fixed on both ends: the POS marks the operations it adopted
+    from the hub with `source: 'LOCAL_HUB'` (the server's schema and its
+    DIRECT/LOCAL_HUB health split already expected that marker, and the
+    POS never sent it), and the server files a `LOCAL_HUB` operation under
+    the origin its payload names, validated against the tenant's
+    workstations. Found by `pos-lan-relay` (the "the peer pushes first"
+    case).
+11. **The POS integration harness had no BigInt JSON polyfill.** The
+    server patches `BigInt.prototype.toJSON` in `main.ts`, and its own e2e
+    config applies the same patch because the specs mount `AppModule`
+    without `bootstrap()`. The POS integration harness mounts it the same
+    way and did NOT apply it, so any response carrying a Prisma BigInt
+    column (`Sale.localNumber`) died with "Do not know how to serialize a
+    BigInt" — the sales pull was the first thing to hit it. Fixed in
+    `vitest.integration.config.ts` (the polyfill is now a `setupFiles`
+    entry, mirroring the server's e2e config).
 
 ---
 

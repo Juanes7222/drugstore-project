@@ -234,6 +234,17 @@ export interface SyncPushServiceConfig {
   accessToken?: string;
   /** Long-lived JWT sent as X-Offline-Token alongside the Bearer access token. */
   offlineToken?: string;
+  /**
+   * This station's own workstation id.
+   *
+   * It is what tells the push pipeline an entry apart from one this station
+   * created: an entry whose `sourceWorkstationId` is a DIFFERENT station was
+   * adopted from the store's LAN, and the server has to be told so (see
+   * `source: 'LOCAL_HUB'` in `preparePush`). Without it the server files a
+   * relayed sale under the delivering station and the origin's history
+   * loses it.
+   */
+  workstationId?: string;
   invoiceService?: InvoiceService;
   auditWriter?: LocalAuditWriter;
 }
@@ -245,9 +256,9 @@ export interface SyncPushServiceConfig {
 export const createSyncPushService = (
   config: SyncPushServiceConfig,
 ): SyncPushService => {
-  const { prisma, baseUrl, accessToken, offlineToken, invoiceService, auditWriter } = config;
+  const { prisma, baseUrl, accessToken, offlineToken, workstationId, invoiceService, auditWriter } = config;
   const normalizedBase = baseUrl.replace(/\/+$/, '');
-  return new SyncPushServiceImpl(prisma, normalizedBase, accessToken, offlineToken, invoiceService, auditWriter);
+  return new SyncPushServiceImpl(prisma, normalizedBase, accessToken, offlineToken, workstationId, invoiceService, auditWriter);
 };
 
 // ---------------------------------------------------------------------------
@@ -260,6 +271,7 @@ type SyncEntryForPush = {
   operationType: string;
   payload: string;
   payloadHash: string;
+  sourceWorkstationId: string;
   sourceCreatedAt: Date;
   clientSequence: bigint;
   retryCount: number;
@@ -304,6 +316,7 @@ class SyncPushServiceImpl implements SyncPushService {
   private readonly baseUrl: string;
   private readonly accessToken?: string;
   private readonly offlineToken?: string;
+  private readonly workstationId?: string;
   private readonly invoiceService?: InvoiceService;
   private readonly auditWriter?: LocalAuditWriter;
 
@@ -312,6 +325,7 @@ class SyncPushServiceImpl implements SyncPushService {
     baseUrl: string,
     accessToken?: string,
     offlineToken?: string,
+    workstationId?: string,
     invoiceService?: InvoiceService,
     auditWriter?: LocalAuditWriter,
   ) {
@@ -319,6 +333,7 @@ class SyncPushServiceImpl implements SyncPushService {
     this.baseUrl = baseUrl;
     this.accessToken = accessToken;
     this.offlineToken = offlineToken;
+    this.workstationId = workstationId;
     this.invoiceService = invoiceService;
     this.auditWriter = auditWriter;
   }
@@ -351,6 +366,11 @@ class SyncPushServiceImpl implements SyncPushService {
       payloadHash: entry.payloadHash,
       sourceCreatedAt: entry.sourceCreatedAt.toISOString(),
       clientSequence: Number(entry.clientSequence),
+      // An entry that came from ANOTHER station was adopted from the store's
+      // LAN hub: this station is delivering it on the origin's behalf, and
+      // the server has to know that to file it under the origin instead of
+      // under the courier.
+      ...(this.isRelayedEntry(entry) ? { source: 'LOCAL_HUB' } : {}),
     }));
 
     const headers: Record<string, string> = {
@@ -520,6 +540,21 @@ class SyncPushServiceImpl implements SyncPushService {
       ...(retryable as unknown as SyncEntryForPush[]),
     ];
     return this.sortByPriority(combined);
+  }
+
+  /**
+   * Whether an entry was adopted from the store's LAN hub.
+   *
+   * The LAN relay copies a peer's operation into this station's outbox with
+   * the ORIGIN's `sourceWorkstationId` — that is what makes the copy a
+   * faithful relay of somebody else's work. So an entry whose source is not
+   * this station is a relayed one, and the server has to be told: filing it
+   * under this station would put the origin's sale in this station's
+   * numbering scope.
+   */
+  private isRelayedEntry(entry: SyncEntryForPush): boolean {
+    if (!this.workstationId) return false;
+    return entry.sourceWorkstationId !== this.workstationId;
   }
 
   /**

@@ -66,7 +66,17 @@ export default defineConfig({
     fileParallelism: false,
     // The base vitest.setup.ts is renderer-oriented; integration tests boot
     // their own environment (PGlite + real Nest app) inside beforeAll.
-    setupFiles: [],
+    //
+    // The BigInt polyfill is the server's own e2e wiring: production patches
+    // `BigInt.prototype.toJSON` in `main.ts`, and the server's e2e config
+    // applies the same patch because the specs mount AppModule without
+    // bootstrap(). These specs do too, so without it ANY response carrying a
+    // Prisma BigInt column (`Sale.localNumber`) dies with "Do not know how
+    // to serialize a BigInt" — the sales pull being the first thing to hit
+    // it.
+    setupFiles: [
+      resolve(__dirname, "../server/test/setup-bigint-polyfill.ts"),
+    ],
     testTimeout: 120_000,
     hookTimeout: 180_000,
   },

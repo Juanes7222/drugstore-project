@@ -115,6 +115,14 @@ const uuidFrom = (seed: string): string => {
 
 const SERVER_WS_ID = uuidFrom("pos-int-return-server-ws");
 const SERVER_USER_ID = "pos-int-return-server-user-id";
+/**
+ * The generic consumer every anonymous sale falls back to.
+ *
+ * Its id is the same in every suite because it is the primary key, so the
+ * row is shared: whoever created it last owns it, and a return left behind
+ * by another suite blocks its deletion.
+ */
+const GENERIC_CLIENT_ID = "00000000-0000-0000-0000-000000000001";
 const USERNAME = "pos-integration-return@pos.test";
 const PASSWORD = "PosIntegration123!";
 const SERVER_PRODUCT_ID = uuidFrom("pos-int-return-server-product");
@@ -235,13 +243,26 @@ describe("POS ↔ Server integration — CLIENT_RETURN over the sync", () => {
     await serverPrisma.clientReturnItem.deleteMany({
       where: { clientReturn: { subscriptionId } },
     });
+    // The generic client row is shared by EVERY suite (same id, so it is the
+    // primary key) and the real-Tauri e2e suite leaves returns of its own
+    // subscription pointing at it. Those returns are not ours, but they DO
+    // block the deletion of the client — so their lines go first, then the
+    // returns, then the client.
+    await serverPrisma.clientReturnItemLot.deleteMany({
+      where: { clientReturnItem: { clientReturn: { clientId: GENERIC_CLIENT_ID } } },
+    });
+    await serverPrisma.clientReturnItem.deleteMany({
+      where: { clientReturn: { clientId: GENERIC_CLIENT_ID } },
+    });
+    await serverPrisma.clientReturn.deleteMany({
+      where: { clientId: GENERIC_CLIENT_ID },
+    });
     await serverPrisma.clientReturn.deleteMany({
       where: { subscriptionId },
     });
     await serverPrisma.client.deleteMany({
-      where: { id: "00000000-0000-0000-0000-000000000001" },
-    });
-    await serverPrisma.taxScheme.deleteMany({
+      where: { id: GENERIC_CLIENT_ID },
+    });    await serverPrisma.taxScheme.deleteMany({
       where: { id: SERVER_TAX_SCHEME_ID },
     });
     await serverPrisma.auditLog.deleteMany({

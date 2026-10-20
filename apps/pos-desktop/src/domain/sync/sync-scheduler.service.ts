@@ -390,6 +390,7 @@ export class SyncScheduler {
       baseUrl: config.baseUrl,
       accessToken: config.accessToken,
       offlineToken: this.offlineToken,
+      workstationId: useLocalSessionStore.getState().session?.workstationId,
       auditWriter: config.auditWriter,
     });
     this.auditSync = createAuditSyncService({
@@ -465,6 +466,7 @@ export class SyncScheduler {
       baseUrl: this.baseUrl,
       accessToken: token,
       offlineToken: this.offlineToken,
+      workstationId: useLocalSessionStore.getState().session?.workstationId,
       invoiceService: this.invoiceService,
       auditWriter: this.auditWriter,
     });
@@ -1238,6 +1240,7 @@ export class SyncScheduler {
       baseUrl: this.baseUrl,
       accessToken: this.accessToken,
       offlineToken: current,
+      workstationId: useLocalSessionStore.getState().session?.workstationId,
       invoiceService: this.invoiceService,
       auditWriter: this.auditWriter,
     });
