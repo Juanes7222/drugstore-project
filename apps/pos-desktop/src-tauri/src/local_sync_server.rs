@@ -1159,6 +1159,198 @@ mod tests {
         assert!(state.serve_task.write().await.is_none());
     }
 
+    // ── The push dedup and the pull cursor ──────────────────────────────
+    //
+    // The whole relay story rests on these two behaviours, and neither had a
+    // test:
+    //
+    //   - a replayed push must NOT store a second copy. The hub buffer would
+    //     grow without bound and every peer would re-adopt the same
+    //     operations for ever.
+    //   - the pull cursor must advance exactly over what it returned. A
+    //     cursor that re-returns makes the peers loop; one that skips loses
+    //     operations.
+    //
+    // The handlers were untested because handle_push persists to the on-disk
+    // operation log and REJECTS an operation it could not write — which
+    // needs the log open, not a running server. So the state is built with
+    // its log pointing at a temporary file.
+
+    fn op(uuid: &str, workstation: &str) -> LocalOperation {
+        LocalOperation {
+            operation_uuid: uuid.to_string(),
+            operation_type: "SALE_CONFIRMATION".to_string(),
+            payload: "{}".to_string(),
+            payload_hash: "hash".to_string(),
+            source_workstation_id: workstation.to_string(),
+            source_created_at: "2026-01-01T00:00:00Z".to_string(),
+            retry_count: 0,
+        }
+    }
+
+    /// A hub state whose operation log is open on a temporary file.
+    async fn state_with_open_log() -> (Arc<LocalSyncServerState>, std::path::PathBuf) {
+        let path = std::env::temp_dir().join("pos-hub-op-log-test.jsonl");
+        let _ = std::fs::remove_file(&path);
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .expect("temporary hub operation log");
+        let state = LocalSyncServerState::new(NETWORK_KEY.to_string(), PREFERRED_PORT);
+        *state.op_log.write().await = Some(file);
+        (Arc::new(state), path)
+    }
+
+    fn auth_headers(key: &str, body: &[u8]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        let mac = compute_hmac(key, body).expect("hmac");
+        headers.insert(
+            "x-local-auth",
+            mac.parse().expect("header value"),
+        );
+        headers
+    }
+
+    async fn push_body(response: axum::response::Response) -> PushResponse {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("push body");
+        serde_json::from_slice(&bytes).expect("push json")
+    }
+
+    async fn pull_body(response: axum::response::Response) -> PullResponse {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("pull body");
+        serde_json::from_slice(&bytes).expect("pull json")
+    }
+
+    /// Push one operation and return the hub's answer.
+    async fn push_one(
+        state: &Arc<LocalSyncServerState>,
+        operation: LocalOperation,
+    ) -> PushResponse {
+        let body = PushRequest {
+            operations: vec![operation],
+        };
+        let bytes = serde_json::to_vec(&body).expect("serialize push");
+        let headers = auth_headers(NETWORK_KEY, &bytes);
+        let response = handle_push(AxumState(state.clone()), headers, Json(body))
+            .await
+            .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        push_body(response).await
+    }
+
+    #[tokio::test]
+    async fn push_answers_a_replay_as_accepted_without_storing_a_second_copy() {
+        let (state, path) = state_with_open_log().await;
+
+        let first = push_one(&state, op("uuid-1", "ws-a")).await;
+        assert_eq!(first.accepted, 1);
+        assert_eq!(first.rejected, 0);
+        assert_eq!(first.accepted_operation_uuids, vec!["uuid-1".to_string()]);
+        assert_eq!(state.received_operations.read().await.len(), 1);
+
+        // The peer's response was lost, so it pushes the SAME operation again.
+        let replay = push_one(&state, op("uuid-1", "ws-a")).await;
+        // Answered as accepted — the hub durably holds it …
+        assert_eq!(replay.accepted, 1);
+        assert_eq!(replay.accepted_operation_uuids, vec!["uuid-1".to_string()]);
+        // … but NOT stored twice.
+        assert_eq!(state.received_operations.read().await.len(), 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn push_stores_two_operations_of_the_same_batch_only_once_each() {
+        let (state, path) = state_with_open_log().await;
+
+        let body = PushRequest {
+            operations: vec![op("uuid-1", "ws-a"), op("uuid-1", "ws-a")],
+        };
+        let bytes = serde_json::to_vec(&body).expect("serialize push");
+        let headers = auth_headers(NETWORK_KEY, &bytes);
+        let response = handle_push(AxumState(state.clone()), headers, Json(body))
+            .await
+            .into_response();
+        let answer = push_body(response).await;
+
+        // The duplicate inside the same batch is answered as accepted (the hub
+        // holds it) but stored once.
+        assert_eq!(answer.accepted, 2);
+        assert_eq!(state.received_operations.read().await.len(), 1);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn pull_returns_other_stations_operations_and_advances_the_cursor() {
+        let (state, path) = state_with_open_log().await;
+
+        push_one(&state, op("uuid-1", "ws-a")).await;
+        push_one(&state, op("uuid-2", "ws-b")).await;
+
+        // ws-a pulls from the epoch: it gets ws-b's operation, never its own.
+        let query = PullQuery {
+            since: "1970-01-01T00:00:00+00:00".to_string(),
+            workstation_id: "ws-a".to_string(),
+        };
+        let query_bytes = format!(
+            "since={}&workstation_id={}",
+            urlencoding::encode(&query.since),
+            urlencoding::encode(&query.workstation_id)
+        )
+        .into_bytes();
+        let headers = auth_headers(NETWORK_KEY, &query_bytes);
+        let response = handle_pull(
+            AxumState(state.clone()),
+            headers,
+            RawQuery(None),
+            Query(PullQuery {
+                since: query.since.clone(),
+                workstation_id: query.workstation_id.clone(),
+            }),
+        )
+        .await
+        .into_response();
+        let pulled = pull_body(response).await;
+
+        assert_eq!(pulled.operations.len(), 1);
+        assert_eq!(pulled.operations[0].operation_uuid, "uuid-2");
+        // The cursor advances to the newest operation returned.
+        assert!(pulled.next_since > query.since);
+
+        // The next pull from that cursor returns nothing: the operations the
+        // hub holds are not re-delivered for ever.
+        let next_query = PullQuery {
+            since: pulled.next_since.clone(),
+            workstation_id: "ws-a".to_string(),
+        };
+        let next_bytes = format!(
+            "since={}&workstation_id={}",
+            urlencoding::encode(&next_query.since),
+            urlencoding::encode(&next_query.workstation_id)
+        )
+        .into_bytes();
+        let next_headers = auth_headers(NETWORK_KEY, &next_bytes);
+        let next_response = handle_pull(
+            AxumState(state.clone()),
+            next_headers,
+            RawQuery(None),
+            Query(next_query),
+        )
+        .await
+        .into_response();
+        let next_pulled = pull_body(next_response).await;
+        assert_eq!(next_pulled.operations.len(), 0);
+
+        let _ = std::fs::remove_file(path);
+    }
+
     #[test]
     fn pull_hmac_uses_url_encoded_query_bytes() {
         const KEY: &str = "test-network-key";

@@ -105,6 +105,8 @@ import {
   createSalesPosService,
 } from "../sales-pos/sales-pos.service";
 import { createInventoryLotsService } from "../inventory-lots/inventory-lots.service";
+import { createInventoryAdjustmentsService } from "../inventory-adjustments/inventory-adjustments.service";
+import { createReturnsService } from "../returns/returns.service";
 import {
   CashShiftService,
   createCashShiftService,
@@ -218,7 +220,8 @@ class FakeHub {
 
   /** How many copies of an operation the hub holds. */
   countFor(operationUuid: string): number {
-    return this.buffer.filter((e) => e.op.operationUuid === operationUuid).length;
+    return this.buffer.filter((e) => e.op.operationUuid === operationUuid)
+      .length;
   }
 }
 
@@ -286,6 +289,19 @@ const SERVER_RESOLUTION_A_ID = uuidFrom("pos-int-lan-fiscal-resolution-a");
 const SERVER_ALLOCATION_A_ID = uuidFrom("pos-int-lan-fiscal-allocation-a");
 const SERVER_RESOLUTION_B_ID = uuidFrom("pos-int-lan-fiscal-resolution-b");
 const SERVER_ALLOCATION_B_ID = uuidFrom("pos-int-lan-fiscal-allocation-b");
+// The credit note is a different DIAN document with its own range.
+const SERVER_CREDIT_RESOLUTION_A_ID = uuidFrom(
+  "pos-int-lan-credit-resolution-a",
+);
+const SERVER_CREDIT_ALLOCATION_A_ID = uuidFrom(
+  "pos-int-lan-credit-allocation-a",
+);
+const SERVER_CREDIT_RESOLUTION_B_ID = uuidFrom(
+  "pos-int-lan-credit-resolution-b",
+);
+const SERVER_CREDIT_ALLOCATION_B_ID = uuidFrom(
+  "pos-int-lan-credit-allocation-b",
+);
 
 /** The generic consumer every anonymous sale falls back to. */
 const GENERIC_CLIENT_ID = "00000000-0000-0000-0000-000000000001";
@@ -325,11 +341,10 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
   let salesPosA: SalesPosService;
   let cashShiftA: CashShiftService;
 
-  // POS terminal B
+  // POS terminal B — the peer that relays. It never sells: it only carries
+  // the other station's operations.
   let pgB: PGlite;
   let localPrismaB: LocalPrismaClient;
-  let salesPosB: SalesPosService;
-  let cashShiftB: CashShiftService;
 
   /** The one hub both stations talk to. */
   let hub: FakeHub;
@@ -339,7 +354,12 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
 
   const cleanServerRows = async (): Promise<void> => {
     const wsIds = [SERVER_WS_A_ID, SERVER_WS_B_ID];
-    const resolutionIds = [SERVER_RESOLUTION_A_ID, SERVER_RESOLUTION_B_ID];
+    const resolutionIds = [
+      SERVER_RESOLUTION_A_ID,
+      SERVER_RESOLUTION_B_ID,
+      SERVER_CREDIT_RESOLUTION_A_ID,
+      SERVER_CREDIT_RESOLUTION_B_ID,
+    ];
     await serverPrisma.syncOperationOutcome.deleteMany({
       where: { subscriptionId },
     });
@@ -347,7 +367,19 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
     await serverPrisma.shiftCashCount.deleteMany({
       where: { cashShift: { workstationId: { in: wsIds } } },
     });
-    await serverPrisma.saleItemLot.deleteMany({ where: { lotId: SERVER_LOT_ID } });
+    await serverPrisma.saleItemLot.deleteMany({
+      where: { lotId: SERVER_LOT_ID },
+    });
+    // The returns reference the sale items, so they go first.
+    await serverPrisma.clientReturnItemLot.deleteMany({
+      where: { clientReturnItem: { clientReturn: { subscriptionId } } },
+    });
+    await serverPrisma.clientReturnItem.deleteMany({
+      where: { clientReturn: { subscriptionId } },
+    });
+    await serverPrisma.clientReturn.deleteMany({
+      where: { subscriptionId },
+    });
     await serverPrisma.saleItem.deleteMany({
       where: { sale: { cashShift: { workstationId: { in: wsIds } } } },
     });
@@ -363,6 +395,12 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
     await serverPrisma.inventoryMovement.deleteMany({
       where: { lotId: SERVER_LOT_ID },
     });
+    // The adjustment documents this spec created. Their movements went with
+    // the lot above, and the documents reference the user, so they have to go
+    // before it.
+    await serverPrisma.inventoryAdjustmentDocument.deleteMany({
+      where: { createdByUserId: SERVER_USER_ID },
+    });
     await serverPrisma.lot.deleteMany({ where: { id: SERVER_LOT_ID } });
     await serverPrisma.purchaseReceptionItem.deleteMany({
       where: { id: SERVER_RECEPTION_ITEM_ID },
@@ -370,7 +408,9 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
     await serverPrisma.purchaseReception.deleteMany({
       where: { id: SERVER_RECEPTION_ID },
     });
-    await serverPrisma.supplier.deleteMany({ where: { id: SERVER_SUPPLIER_ID } });
+    await serverPrisma.supplier.deleteMany({
+      where: { id: SERVER_SUPPLIER_ID },
+    });
     await serverPrisma.fiscalDocument.deleteMany({
       where: { subscriptionId, resolutionId: { in: resolutionIds } },
     });
@@ -387,15 +427,21 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
       where: { productId: SERVER_PRODUCT_ID },
     });
     await serverPrisma.product.deleteMany({ where: { id: SERVER_PRODUCT_ID } });
-    await serverPrisma.taxScheme.deleteMany({ where: { id: SERVER_TAX_SCHEME_ID } });
+    await serverPrisma.taxScheme.deleteMany({
+      where: { id: SERVER_TAX_SCHEME_ID },
+    });
     await serverPrisma.paymentMethod.deleteMany({
       where: { id: SERVER_PM_CASH_ID },
     });
-    await serverPrisma.auditLog.deleteMany({ where: { userId: SERVER_USER_ID } });
+    await serverPrisma.auditLog.deleteMany({
+      where: { userId: SERVER_USER_ID },
+    });
     await serverPrisma.auditLog.deleteMany({
       where: { workstationId: { in: wsIds } },
     });
-    await serverPrisma.userSession.deleteMany({ where: { userId: SERVER_USER_ID } });
+    await serverPrisma.userSession.deleteMany({
+      where: { userId: SERVER_USER_ID },
+    });
     await serverPrisma.user.deleteMany({ where: { id: SERVER_USER_ID } });
     await serverPrisma.workstation.deleteMany({ where: { id: { in: wsIds } } });
   };
@@ -503,7 +549,10 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
     });
     await serverPrisma.product.update({
       where: { id: SERVER_PRODUCT_ID },
-      data: { currentPriceId: priceHistory.id, currentTaxHistoryId: taxHistory.id },
+      data: {
+        currentPriceId: priceHistory.id,
+        currentTaxHistoryId: taxHistory.id,
+      },
     });
 
     await serverPrisma.lot.create({
@@ -557,9 +606,66 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
       },
     });
 
+    // A credit note is a separate DIAN document and needs its own resolution
+    // and allocation. Without it the server rejects a return's credit note
+    // with "No active resolution allocation found … with document type
+    // CREDIT_NOTE", and the return fails permanently at replay.
     for (const [wsId, resId, allocId, prefix] of [
-      [SERVER_WS_A_ID, SERVER_RESOLUTION_A_ID, SERVER_ALLOCATION_A_ID, "POS-LANA"],
-      [SERVER_WS_B_ID, SERVER_RESOLUTION_B_ID, SERVER_ALLOCATION_B_ID, "POS-LANB"],
+      [
+        SERVER_WS_A_ID,
+        SERVER_CREDIT_RESOLUTION_A_ID,
+        SERVER_CREDIT_ALLOCATION_A_ID,
+        "POS-LANCA",
+      ],
+      [
+        SERVER_WS_B_ID,
+        SERVER_CREDIT_RESOLUTION_B_ID,
+        SERVER_CREDIT_ALLOCATION_B_ID,
+        "POS-LANCB",
+      ],
+    ] as const) {
+      await serverPrisma.fiscalResolution.create({
+        data: {
+          id: resId,
+          subscriptionId,
+          resolutionNumber: `187641${prefix.length}${resId.slice(0, 6)}`,
+          documentType: "CREDIT_NOTE",
+          prefix,
+          rangeFrom: 1,
+          rangeTo: 1000,
+          validFrom: new Date("2026-01-01"),
+          validTo: new Date("2027-12-31"),
+          state: "ACTIVE",
+          workstationId: wsId,
+        },
+      });
+      await serverPrisma.fiscalResolutionAllocation.create({
+        data: {
+          id: allocId,
+          subscriptionId,
+          resolutionId: resId,
+          workstationId: wsId,
+          rangeFrom: 1,
+          rangeTo: 1000,
+          allocatedAt: new Date("2026-01-01"),
+          allocatedByUserId: SERVER_USER_ID,
+        },
+      });
+    }
+
+    for (const [wsId, resId, allocId, prefix] of [
+      [
+        SERVER_WS_A_ID,
+        SERVER_RESOLUTION_A_ID,
+        SERVER_ALLOCATION_A_ID,
+        "POS-LANA",
+      ],
+      [
+        SERVER_WS_B_ID,
+        SERVER_RESOLUTION_B_ID,
+        SERVER_ALLOCATION_B_ID,
+        "POS-LANB",
+      ],
     ] as const) {
       await serverPrisma.fiscalResolution.create({
         data: {
@@ -1136,10 +1242,12 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
     cashShiftA = servicesA.cashShift;
 
     const nextLocalNumber =
-      (await localPrismaA.sale.aggregate({
-        where: { sourceWorkstationId: POS_WS_A_ID },
-        _max: { localNumber: true },
-      }))._max.localNumber + 1n;
+      (
+        await localPrismaA.sale.aggregate({
+          where: { sourceWorkstationId: POS_WS_A_ID },
+          _max: { localNumber: true },
+        })
+      )._max.localNumber + 1n;
 
     // Two sales made offline; the first one is written off before the relay.
     const writtenOff = (await salesPosA.create({
@@ -1203,6 +1311,414 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
     ).map((row) => Number(row.localNumber));
     expect(serverNumbers).toContain(Number(nextLocalNumber) + 1);
     expect(serverNumbers).not.toContain(Number(nextLocalNumber));
+  }, 120000);
+
+  it("relays a stock movement and applies it exactly once on the server", async () => {
+    // The relay is generic, but every operation type has its own replay
+    // handler with its own effects. A stock movement is the one that moves
+    // inventory: applied twice, the batch is short twice — and nobody would
+    // see it in the sale's total.
+    useTerminalSession(POS_WS_A_ID, tokenA, "pos-int-lan-session-a4");
+    const adjustmentsA = createInventoryAdjustmentsService(localPrismaA, {
+      requireRole: () => useLocalSessionStore.getState().session!,
+    } as any);
+
+    const localLotBefore = await localPrismaA.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    const serverLotBefore = await serverPrisma.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+
+    // ── The origin writes off three units of the batch ───────────────────
+    const items = [
+      {
+        productId: PRODUCT_ID,
+        quantity: -3,
+        lotId: SERVER_LOT_ID,
+        reason: "DAMAGED",
+      },
+    ];
+    const draft = (await adjustmentsA.create({
+      items,
+      notes: "E2E relay: broken units",
+    })) as { id: string };
+    await adjustmentsA.apply(draft.id, {
+      items,
+      notes: "E2E relay: broken units",
+    });
+
+    const entry = await localPrismaA.syncQueue.findFirstOrThrow({
+      where: { operationType: "INVENTORY_ADJUSTMENT" },
+      orderBy: { clientSequence: "desc" },
+    });
+
+    // The origin's own books moved once.
+    const localLotAfter = await localPrismaA.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    expect(localLotAfter.currentStock).toBe(localLotBefore.currentStock - 3);
+    const localMovements = await localPrismaA.inventoryMovement.count({
+      where: { adjustmentDocumentId: draft.id },
+    });
+    expect(localMovements).toBe(1);
+
+    // ── The relay ───────────────────────────────────────────────────────
+    const engineA = await makeEngine(localPrismaA, POS_WS_A_ID);
+    await engineA.runCycle();
+    const engineB = await makeEngine(localPrismaB, POS_WS_B_ID);
+    await engineB.runCycle();
+
+    const adopted = await localPrismaB.syncQueue.findFirstOrThrow({
+      where: { operationUuid: entry.operationUuid },
+    });
+    expect(adopted.status).toBe("PENDING");
+
+    // The peer carries the movement but has NOT applied it: the relay
+    // forwards, the server decides.
+    const peerLot = await localPrismaB.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    expect(peerLot.currentStock).toBe(LOT_INITIAL_STOCK);
+    expect(await localPrismaB.inventoryAdjustmentDocument.count()).toBe(0);
+
+    // ── The server applies it once ───────────────────────────────────────
+    await pushToServer(localPrismaB, tokenB, POS_WS_B_ID);
+    await drainServerQueue();
+
+    const serverDocs = await serverPrisma.inventoryAdjustmentDocument.findMany({
+      where: { sourceOperationUuid: entry.operationUuid },
+    });
+    expect(serverDocs).toHaveLength(1);
+    expect(serverDocs[0].state).toBe("APPLIED");
+
+    const serverMovements = await serverPrisma.inventoryMovement.findMany({
+      where: { adjustmentDocumentId: serverDocs[0].id },
+    });
+    expect(serverMovements).toHaveLength(1);
+    expect(serverMovements[0].movementType).toBe("NEGATIVE_ADJUSTMENT");
+    expect(serverMovements[0].quantity).toBe(3);
+
+    const serverLotAfter = await serverPrisma.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    expect(serverLotAfter.currentStock).toBe(serverLotBefore.currentStock - 3);
+
+    // ── And the origin pushing the same movement changes nothing ────────
+    await pushToServer(localPrismaA, tokenA, POS_WS_A_ID);
+    await drainServerQueue();
+
+    expect(
+      await serverPrisma.inventoryAdjustmentDocument.count({
+        where: { sourceOperationUuid: entry.operationUuid },
+      }),
+    ).toBe(1);
+    expect(
+      await serverPrisma.inventoryMovement.count({
+        where: { adjustmentDocumentId: serverDocs[0].id },
+      }),
+    ).toBe(1);
+    const serverLotFinal = await serverPrisma.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    // NOT minus six: the movement was applied once.
+    expect(serverLotFinal.currentStock).toBe(serverLotBefore.currentStock - 3);
+  }, 120000);
+
+  it("delivers the sale when the origin is gone before the internet returns", async () => {
+    // The reason the relay exists: a station that never reaches the server
+    // still gets its sales delivered, by a peer that holds a copy.
+    useTerminalSession(POS_WS_A_ID, tokenA, "pos-int-lan-session-a5");
+    const servicesA = makeTerminalServices(localPrismaA);
+    salesPosA = servicesA.salesPos;
+    cashShiftA = servicesA.cashShift;
+
+    const sale = (await salesPosA.create({
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+    })) as { id: string };
+    await salesPosA.confirm(sale.id, {
+      payments: [{ paymentMethodId: PM_CASH_ID, amount: 17850 }],
+    });
+
+    const entry = await localPrismaA.syncQueue.findFirstOrThrow({
+      where: { operationType: "SALE_CONFIRMATION" },
+      orderBy: { clientSequence: "desc" },
+    });
+
+    // The relay: the peer takes a copy before the origin goes.
+    const engineA = await makeEngine(localPrismaA, POS_WS_A_ID);
+    await engineA.runCycle();
+    const engineB = await makeEngine(localPrismaB, POS_WS_B_ID);
+    await engineB.runCycle();
+
+    const adopted = await localPrismaB.syncQueue.findFirstOrThrow({
+      where: { operationUuid: entry.operationUuid },
+    });
+    expect(adopted.status).toBe("PENDING");
+
+    // ── The origin is gone: it cannot deliver the sale any more ─────────
+    await localPrismaA.syncQueue.deleteMany({
+      where: { operationUuid: entry.operationUuid },
+    });
+    const originLeft = await localPrismaA.syncQueue.count({
+      where: { operationUuid: entry.operationUuid },
+    });
+    expect(originLeft).toBe(0);
+
+    // ── The peer delivers it ────────────────────────────────────────────
+    await pushToServer(localPrismaB, tokenB, POS_WS_B_ID);
+    await drainServerQueue();
+
+    const serverSale = await serverPrisma.sale.findFirstOrThrow({
+      where: { sourceOperationUuid: entry.operationUuid },
+    });
+    expect(serverSale.operationalState).toBe("CONFIRMED");
+    // The sale is still the ORIGIN's: the relay carries the authorship with
+    // the payload, so the station that lost its terminal does not lose the
+    // sale's identity either.
+    expect(serverSale.sourceWorkstationId).toBe(SERVER_WS_A_ID);
+    expect(Number(serverSale.totalAmount)).toBe(17850);
+
+    // And it is the only copy.
+    expect(
+      await serverPrisma.sale.count({
+        where: { sourceOperationUuid: entry.operationUuid },
+      }),
+    ).toBe(1);
+  }, 120000);
+
+  it("applies the sale once when both stations push it at the same time", async () => {
+    // The race the relay makes possible: the origin and the peer both hold
+    // the operation, and both push it the moment the internet returns.
+    useTerminalSession(POS_WS_A_ID, tokenA, "pos-int-lan-session-a6");
+    const servicesA = makeTerminalServices(localPrismaA);
+    salesPosA = servicesA.salesPos;
+    cashShiftA = servicesA.cashShift;
+
+    const sale = (await salesPosA.create({
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+    })) as { id: string };
+    await salesPosA.confirm(sale.id, {
+      payments: [{ paymentMethodId: PM_CASH_ID, amount: 17850 }],
+    });
+
+    const entry = await localPrismaA.syncQueue.findFirstOrThrow({
+      where: { operationType: "SALE_CONFIRMATION" },
+      orderBy: { clientSequence: "desc" },
+    });
+
+    const engineA = await makeEngine(localPrismaA, POS_WS_A_ID);
+    await engineA.runCycle();
+    const engineB = await makeEngine(localPrismaB, POS_WS_B_ID);
+    await engineB.runCycle();
+
+    const serverLotBefore = await serverPrisma.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    // The movements of the lot so far — a movement does not name the sale
+    // it belongs to, so the count is compared before and after.
+    const movementsBefore = await serverPrisma.inventoryMovement.count({
+      where: { lotId: SERVER_LOT_ID, movementType: "SALE" },
+    });
+
+    // Both push, at the same time.
+    await Promise.all([
+      pushToServer(localPrismaA, tokenA, POS_WS_A_ID),
+      pushToServer(localPrismaB, tokenB, POS_WS_B_ID),
+    ]);
+    await drainServerQueue();
+
+    // ONE sale, whatever the order the server happened to take them in.
+    const serverSales = await serverPrisma.sale.findMany({
+      where: { sourceOperationUuid: entry.operationUuid },
+    });
+    expect(serverSales).toHaveLength(1);
+    expect(Number(serverSales[0].totalAmount)).toBe(17850);
+
+    // The stock moved ONCE — two pushes, one movement.
+    const serverLotAfter = await serverPrisma.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    expect(serverLotAfter.currentStock).toBe(serverLotBefore.currentStock - 1);
+
+    const movementsAfter = await serverPrisma.inventoryMovement.count({
+      where: { lotId: SERVER_LOT_ID, movementType: "SALE" },
+    });
+    expect(movementsAfter - movementsBefore).toBe(1);
+
+    // And the server holds ONE queue row for the operation.
+    expect(
+      await serverPrisma.syncQueue.count({
+        where: { operationUuid: entry.operationUuid },
+      }),
+    ).toBe(1);
+  }, 120000);
+
+  it("relays a client return and credits the stock back exactly once", async () => {
+    // A return is the movement with the most effects: the stock goes back to
+    // the batch it came from, the money is refunded and a credit note is
+    // issued. Applied twice, the drawer would hold stock that was sold.
+    useTerminalSession(POS_WS_A_ID, tokenA, "pos-int-lan-session-a7");
+    const servicesA = makeTerminalServices(localPrismaA);
+    salesPosA = servicesA.salesPos;
+    cashShiftA = servicesA.cashShift;
+    const returnsA = createReturnsService(localPrismaA, {
+      requireRole: () => useLocalSessionStore.getState().session!,
+    } as any);
+
+    // ── The origin sells one unit ───────────────────────────────────────
+    const localLotBefore = await localPrismaA.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    // The server's stock before the sale: the sale takes one unit and the
+    // return gives it back, so this is where the batch has to end up.
+    const serverLotAtStart = await serverPrisma.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    const sale = (await salesPosA.create({
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+    })) as { id: string };
+    await salesPosA.confirm(sale.id, {
+      payments: [{ paymentMethodId: PM_CASH_ID, amount: 17850 }],
+    });
+    expect(
+      (
+        await localPrismaA.lot.findUniqueOrThrow({
+          where: { id: SERVER_LOT_ID },
+        })
+      ).currentStock,
+    ).toBe(localLotBefore.currentStock - 1);
+
+    const saleEntry = await localPrismaA.syncQueue.findFirstOrThrow({
+      where: { operationType: "SALE_CONFIRMATION" },
+      orderBy: { clientSequence: "desc" },
+    });
+
+    // ── The sale is relayed and delivered first ─────────────────────────
+    // The order matters: the credit note of the return references the
+    // sale's INVOICE, and the invoice is only validated once the sale has
+    // been transmitted. In production the fiscal pipeline does that; here
+    // the harness stands in for the provider.
+    const engineA = await makeEngine(localPrismaA, POS_WS_A_ID);
+    await engineA.runCycle();
+    const engineB = await makeEngine(localPrismaB, POS_WS_B_ID);
+    await engineB.runCycle();
+
+    const adoptedSale = await localPrismaB.syncQueue.findFirstOrThrow({
+      where: { operationUuid: saleEntry.operationUuid },
+    });
+    expect(adoptedSale.status).toBe("PENDING");
+
+    await pushToServer(localPrismaB, tokenB, POS_WS_B_ID);
+    await drainServerQueue();
+
+    const serverSale = await serverPrisma.sale.findFirstOrThrow({
+      where: { sourceOperationUuid: saleEntry.operationUuid },
+    });
+    expect(serverSale.operationalState).toBe("CONFIRMED");
+
+    // The stand-in for the DIAN provider: nothing in the stack transmits, so
+    // the invoice stays PENDING_GENERATION and the credit note would have no
+    // validated invoice to reference.
+    await serverPrisma.fiscalDocument.updateMany({
+      where: { saleId: serverSale.id, documentType: "INVOICE" },
+      data: { fiscalState: "VALIDATED", ptResponseCode: "e2e" },
+    });
+
+    // ── The origin returns the unit, still offline ───────────────────────
+    const localSale = await localPrismaA.sale.findUniqueOrThrow({
+      where: { id: sale.id },
+      include: { items: true },
+    });
+    const draft = (await returnsA.create({
+      saleId: sale.id,
+      clientId: GENERIC_CLIENT_ID,
+      refundMethodId: PM_CASH_ID,
+      reason: "DEFECTIVE",
+      items: [{ saleItemId: localSale.items[0].id, quantity: 1 }],
+    })) as { id: string };
+    await returnsA.confirm(draft.id);
+
+    // The return put the stock back on the origin's side.
+    expect(
+      (
+        await localPrismaA.lot.findUniqueOrThrow({
+          where: { id: SERVER_LOT_ID },
+        })
+      ).currentStock,
+    ).toBe(localLotBefore.currentStock);
+
+    const entry = await localPrismaA.syncQueue.findFirstOrThrow({
+      where: { operationType: "CLIENT_RETURN" },
+      orderBy: { clientSequence: "desc" },
+    });
+
+    // ── And the return is relayed and delivered ──────────────────────────
+    const engineA2 = await makeEngine(localPrismaA, POS_WS_A_ID);
+    await engineA2.runCycle();
+    const engineB2 = await makeEngine(localPrismaB, POS_WS_B_ID);
+    await engineB2.runCycle();
+
+    const adopted = await localPrismaB.syncQueue.findFirstOrThrow({
+      where: { operationUuid: entry.operationUuid },
+    });
+    expect(adopted.status).toBe("PENDING");
+
+    const serverLotBefore = await serverPrisma.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    // The sale took one unit on the server too.
+    expect(serverLotBefore.currentStock).toBe(
+      serverLotAtStart.currentStock - 1,
+    );
+
+    await pushToServer(localPrismaB, tokenB, POS_WS_B_ID);
+    await drainServerQueue();
+
+    // The server's own verdict on the relayed return, before the assertions
+    // below: a rejected replay leaves the local row PERMANENT_FAILURE with
+    // the server's reason, and that reason is the diagnosis.
+    const pushedEntry = await localPrismaB.syncQueue.findUniqueOrThrow({
+      where: { operationUuid: entry.operationUuid },
+    });
+    expect(
+      pushedEntry.status,
+      `the server rejected the relayed return: ${pushedEntry.lastErrorMessage}`,
+    ).toBe("COMPLETED");
+
+    // And the server's own queue row: the replay ran, and this is why.
+    const serverRow = await serverPrisma.syncQueue.findFirstOrThrow({
+      where: { operationUuid: entry.operationUuid },
+      select: { status: true, lastErrorMessage: true },
+    });
+    expect(
+      serverRow.status,
+      `the server's replay of the relayed return failed: ${serverRow.lastErrorMessage}`,
+    ).toBe("COMPLETED");
+
+    // ONE return, with its items.
+    const serverReturns = await serverPrisma.clientReturn.findMany({
+      where: { saleId: serverSale.id },
+      include: { items: true },
+    });
+    expect(serverReturns).toHaveLength(1);
+    expect(serverReturns[0].state).toBe("CONFIRMED");
+    expect(serverReturns[0].items).toHaveLength(1);
+    expect(Number(serverReturns[0].refundAmount)).toBe(17850);
+
+    // ONE credit note for it.
+    const creditNotes = await serverPrisma.fiscalDocument.findMany({
+      where: { clientReturnId: serverReturns[0].id },
+    });
+    expect(creditNotes).toHaveLength(1);
+    expect(creditNotes[0].documentType).toBe("CREDIT_NOTE");
+
+    // The stock came back ONCE: the sale took one unit and the return gave
+    // it back, so the batch is where it started.
+    const serverLotAfter = await serverPrisma.lot.findUniqueOrThrow({
+      where: { id: SERVER_LOT_ID },
+    });
+    expect(serverLotAfter.currentStock).toBe(serverLotAtStart.currentStock);
   }, 120000);
 
   it("converges the relayed sale on the peer's own mirror", async () => {

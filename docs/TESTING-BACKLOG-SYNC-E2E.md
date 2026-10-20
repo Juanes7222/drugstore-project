@@ -3,10 +3,10 @@
 **Created:** 2026-09-22
 **Scope:** Remaining tests to complete full production-confidence coverage of the
 offline-first sync system (POS ↔ server hub ↔ fiscal engine).
-**Current state:** 19 integration specs / 81 tests green (`apps/pos-desktop`,
+**Current state:** 19 integration specs / 85 tests green (`apps/pos-desktop`,
 vitest) — includes the 6 specs written from this backlog (see §2) and the LAN
 relay spec (`pos-lan-relay`, see §1). Verified twice consecutively against the
-persistent test DB (19/19 specs, 81/81 tests both runs). Unit suites: 51/51
+persistent test DB (19/19 specs, 85/85 tests both runs). Unit suites: 51/51
 dispatcher, 28/28 supplier-returns, 47/47 sync-push, 151/151 fiscal-engine,
 full POS vitest 6437/6437 green, server unit 2471/2471, server e2e 133/133.
 
@@ -31,6 +31,55 @@ HTTP → real NestJS AppModule → PostgreSQL → server-side replay):
 | Fiscal contingency (sale during `ResolutionExhaustedException`, window expiry) | `pos-fiscal-contingency`, `pos-fiscal-expiry` |
 | **Auto dependency requeue (client + product chains)** | `pos-dependency-requeue` |
 | **LAN relay between two stations (no internet): relay, adoption, no duplicate movements, attribution** | `pos-lan-relay` |
+
+### 1.1 What the LAN relay spec covers, and what it does not
+
+`pos-lan-relay` drives the real `LocalSyncEngine` between two real POS
+databases over a stand-in hub, against the real server. It proves the
+relay's MACHINERY — the operation reaches the peer, is adopted exactly once,
+is not applied locally, is filed on the server under the ORIGIN, keeps the
+origin's numbering, and converges on the peer's mirror — for:
+
+- a **sale** (one sale, one invoice, one stock movement),
+- a **stock movement** (an inventory adjustment: one document, one movement,
+  the batch short once),
+- a **client return** (the stock goes back to its batch, one credit note,
+  the refund issued once),
+
+and it covers the three scenarios that make the relay necessary:
+
+- the **origin is gone** before the internet returns (the peer still
+  delivers the sale, and the sale keeps the origin's identity),
+- **both stations push at the same time** (the server applies it once),
+- the **hub re-delivers** what it already holds (the adoption stays
+  idempotent).
+
+The machinery is generic, but every operation type has its own replay
+handler with its own effects and its own idempotency surface. Still to be
+covered through the relay:
+
+| Operation | What it would prove |
+|---|---|
+| `PURCHASE_RECEPTION_CONFIRMATION` | Stock entering the store once |
+| `SUPPLIER_RETURN_CONFIRMATION` | Stock leaving the store once (the bug the backlog already recorded) |
+| `CLIENT_CREDIT_PAYMENT` / `_ANNULMENT` | A receivable created and cancelled once, balance exact |
+| `CLIENT_CREATION` / `UPDATE` / `DEACTIVATE` | The client row exists once (the server maps the id) |
+| `PRODUCT_CREATION` / `UPDATE` | The catalogue row exists once, with the server's internal code |
+
+Two gaps outside the operation types:
+
+- **The real hub's dedup had no test.** The Rust hub's `handle_push` answers a
+  replayed operation as accepted without storing a second copy, and
+  `handle_pull` filters with a strict `>` over a nanosecond cursor. Both are
+  what the whole relay story rests on, and neither was covered by the Rust
+  tests (which pinned the port state, the HMAC query encoding, the serde
+  contract and the conflict identity). They now have tests — in the hub's
+  own `#[cfg(test)]` module, since the handlers need its on-disk operation
+  log open (which is why they were left untested until now).
+- **The hub changing is not covered end to end.** The engine's unit test
+  pins the cursor reset when the hub address changes; nothing proves that a
+  peer re-reading the whole buffer after the hub changed still adopts each
+  operation only once.
 
 Bugs the integration suite already caught and fixed in production code:
 
