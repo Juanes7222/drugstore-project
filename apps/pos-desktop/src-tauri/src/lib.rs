@@ -144,6 +144,11 @@ pub fn run() {
             // Sentinel commands (update-stability tracking)
             commands::sentinel::read_sentinel_command,
             commands::sentinel::write_sentinel_command,
+            // Update installation commands
+            commands::update_install::write_update_binary_command,
+            commands::update_install::compute_sha256_command,
+            commands::update_install::trigger_update_install_command,
+            commands::update_install::rollback_update_command,
             // Printer discovery commands
             commands::printer_discovery::discover_printers,
             commands::printer_discovery::scan_network_printers,

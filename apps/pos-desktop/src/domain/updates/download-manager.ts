@@ -79,6 +79,28 @@ const MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [5000, 30000, 300000]; // 5s, 30s, 5min
 const PROGRESS_SMOOTHING_FACTOR = 0.3;
 
+/** The file name of a download URL, without the query string. */
+function filenameFromUrl(url: string): string | null {
+  const withoutQuery = url.split('?')[0] ?? url;
+  const name = withoutQuery.split('/').pop();
+  return name && name.length > 0 ? name : null;
+}
+
+/**
+ * Base64 of a byte array.
+ *
+ * The installer is handed to Rust as base64: a JSON array of one number per
+ * byte would be an order of magnitude larger than the file itself.
+ */
+function toBase64(bytes: Uint8Array): string {
+  const CHUNK = 8192;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -324,10 +346,15 @@ class DownloadManagerImpl implements DownloadManager {
 
     if (isTauriEnv) {
       const arrayBuffer = await blob.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
+      // The file name has to survive the round trip: Windows can only
+      // launch an installer that keeps its extension.
+      const filename =
+        filenameFromUrl(this.config.downloadUrl) ??
+        `${this.config.version}.bin`;
       const path = await invoke<string>('write_update_binary_command', {
         version: this.config.version,
-        data: Array.from(uint8Array),
+        filename,
+        dataBase64: toBase64(new Uint8Array(arrayBuffer)),
       });
       return path;
     }

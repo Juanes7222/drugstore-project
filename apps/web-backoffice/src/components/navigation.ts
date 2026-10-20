@@ -14,6 +14,7 @@ import {
   WarningAmberIcon,
   WorkspacePremiumIcon,
   HowToRegIcon,
+  DownloadIcon,
 } from "./icons/app-icons";
 import type { AppIconComponent } from "./icons/app-icon-component";
 
@@ -53,5 +54,6 @@ export const ADMIN_NAV_ITEMS: NavItemConfig[] = [
   { to: "/admin/sync", labelKey: "saas.navSync", icon: DevicesIcon },
   { to: "/admin/plans", labelKey: "saas.navPlans", icon: WorkspacePremiumIcon },
   { to: "/admin/admins", labelKey: "saas.navAdmins", icon: HowToRegIcon },
+  { to: "/admin/updates", labelKey: "saas.navUpdates", icon: DownloadIcon },
   { to: "/admin/audit", labelKey: "saas.navAudit", icon: HistoryIcon },
 ];

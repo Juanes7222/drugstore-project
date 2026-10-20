@@ -41,6 +41,10 @@ impl From<std::io::Error> for SentinelError {
 pub struct SentinelData {
     pub count: u32,
     pub version: String,
+    /// Identifies the local database install the crash count belongs to.
+    /// The TypeScript rollback detector uses it to drop a count that belongs
+    /// to a database that no longer exists.
+    pub db_install_id: Option<String>,
 }
 
 /// Strip path separators and parent references from a user-supplied key.
@@ -88,6 +92,7 @@ pub fn read_sentinel_command(
         return Ok(SentinelData {
             count: 0,
             version: String::new(),
+            db_install_id: None,
         });
     }
     let raw = fs::read_to_string(&path).map_err(|e| {
@@ -105,7 +110,15 @@ pub fn read_sentinel_command(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    Ok(SentinelData { count, version })
+    let db_install_id = parsed
+        .get("dbInstallId")
+        .and_then(|v| v.as_str())
+        .map(|v| v.to_string());
+    Ok(SentinelData {
+        count,
+        version,
+        db_install_id,
+    })
 }
 
 /// Full JSON payload as written by the caller. Stored verbatim and

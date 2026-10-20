@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -54,8 +55,17 @@ export class AdminUpdatesController {
   async publishVersion(
     @UploadedFile(
       new ParseFilePipe({
+        fileIsRequired: true,
         validators: [
-          new FileTypeValidator({ fileType: 'application/octet-stream' }),
+          new FileTypeValidator({
+            // Installers reach us as a variety of mime types depending on the
+            // browser and the packaging format, and Nest validates by magic
+            // number. Only the platform admin can upload here, and the binary
+            // is signed server-side before it is ever served.
+            fileType:
+              /^application\/(octet-stream|x-msdownload|x-msdos-program|vnd\.microsoft\.portable-executable|x-msi|zip|x-executable|x-sh)$/,
+            fallbackToMimetype: true,
+          }),
           new MaxFileSizeValidator({ maxSize: 500 * 1024 * 1024 }), // 500 MB
         ],
       }),
@@ -63,18 +73,19 @@ export class AdminUpdatesController {
     binary: any, // Uploaded file, typed as Express.Multer.File at runtime
     @Body('metadata') metadataRaw: string,
   ) {
-    const metadata = JSON.parse(metadataRaw);
-    const validated = PublishVersionSchema.parse(metadata);
+    let metadata: unknown;
+    try {
+      metadata = JSON.parse(metadataRaw);
+    } catch {
+      throw new BadRequestException('The metadata field must be a JSON object.');
+    }
 
-    // The signature is expected to be a separate form field or could be
-    // the Tauri-generated signature for the binary.
-    const signature = typeof metadata.signature === 'string' ? metadata.signature : '';
+    const validated = PublishVersionSchema.parse(metadata);
 
     return this.updatesService.publishVersion({
       ...validated,
       binaryFilename: binary.originalname,
       binaryBuffer: binary.buffer,
-      signature,
     });
   }
 

@@ -110,6 +110,11 @@ const AdminsPage = lazy(() =>
     default: m.AdminsPage,
   })),
 );
+const UpdatesPage = lazy(() =>
+  import("./pages/admin/updates-page").then((m) => ({
+    default: m.UpdatesPage,
+  })),
+);
 
 function RequireAuth() {
   const location = useLocation();
@@ -172,6 +177,7 @@ export function App() {
               <Route path="plans" element={<PlansPage />} />
               <Route path="sync" element={<SyncHealthPage />} />
               <Route path="admins" element={<AdminsPage />} />
+              <Route path="updates" element={<UpdatesPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Route>

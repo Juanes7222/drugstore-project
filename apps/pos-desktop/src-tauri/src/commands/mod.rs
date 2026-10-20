@@ -6,3 +6,4 @@ pub mod oauth_popup;
 pub mod printer_discovery;
 pub mod report;
 pub mod sentinel;
+pub mod update_install;

@@ -4,10 +4,13 @@ import {
   Post,
   Body,
   Query,
+  Param,
+  Res,
   UsePipes,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { UpdatesService } from './updates.service';
 import { TelemetryService } from './telemetry.service';
 import {
@@ -55,6 +58,37 @@ export class UpdatesController {
       channel: query.channel ?? 'STABLE',
       licensePlanCode: query.licensePlanCode,
     });
+  }
+
+  /**
+   * Download a published update binary.
+   *
+   * Public for the same reason as /updates/check: a workstation must be able
+   * to fetch the installer even before its license is fully active. The
+   * binary is served only when its signature still matches the one recorded
+   * at publish time.
+   */
+  @Get('download/:channel/:version/:filename')
+  @Public()
+  async download(
+    @Param('channel') channel: string,
+    @Param('version') version: string,
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { stream, size } = await this.updatesService.openVerifiedBinary(
+      channel,
+      version,
+      filename,
+    );
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', String(size));
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename.replace(/"/g, '')}"`,
+    );
+    stream.pipe(res);
   }
 
   /**

@@ -1,10 +1,28 @@
 import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
+import type { Readable } from 'node:stream';
 import {
   UPDATES_OBJECT_STORAGE,
   ObjectStorage,
 } from '../../infrastructure/storage/object-storage.port';
+
+/**
+ * Keep only the file name of an uploaded binary.
+ *
+ * A path separator would create nested storage keys, and the download route
+ * addresses the file by the published name.
+ */
+export function sanitizeBinaryFilename(filename: string): string {
+  const base = filename.replace(/\\/g, '/').split('/').pop() ?? '';
+  const cleaned = base.trim();
+  if (!cleaned || cleaned === '.' || cleaned === '..') {
+    throw new InternalServerErrorException(
+      'The uploaded binary has no usable file name.',
+    );
+  }
+  return cleaned;
+}
 
 /**
  * Handles upload, storage, and retrieval of update binary files.
@@ -37,11 +55,12 @@ export class BinaryStorageService {
     filename: string,
     buffer: Buffer,
   ): Promise<{ fileHash: string; downloadUrl: string; fileSize: number }> {
-    const key = this.objectKey(channel, version, filename);
+    const safeFilename = sanitizeBinaryFilename(filename);
+    const key = this.objectKey(channel, version, safeFilename);
     await this.storage.put(key, buffer);
 
     const fileHash = createHash('sha256').update(buffer).digest('hex');
-    const downloadUrl = `${this.publicBaseUrl.replace(/\/$/, '')}/updates/download/${channel}/${version}/${filename}`;
+    const downloadUrl = `${this.publicBaseUrl.replace(/\/$/, '')}/updates/download/${channel}/${version}/${safeFilename}`;
 
     return { fileHash, downloadUrl, fileSize: buffer.length };
   }
@@ -62,6 +81,18 @@ export class BinaryStorageService {
         { cause: error },
       );
     }
+  }
+
+  /**
+   * Open a stored binary for streaming. Used by the download route, which
+   * serves installers too large to hold in memory.
+   */
+  async openBinaryStream(
+    channel: string,
+    version: string,
+    filename: string,
+  ): Promise<Readable> {
+    return this.storage.getStream(this.objectKey(channel, version, filename));
   }
 
   /**
@@ -94,6 +125,6 @@ export class BinaryStorageService {
   }
 
   private objectKey(channel: string, version: string, filename: string): string {
-    return `${channel}/${version}/${filename}`;
+    return `${channel}/${version}/${sanitizeBinaryFilename(filename)}`;
   }
 }

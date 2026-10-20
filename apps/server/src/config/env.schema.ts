@@ -96,6 +96,11 @@ export const envSchema = z.object({
     .min(32)
     .default('dev-telemetry-hmac-secret-change-in-prod-32chars!!!')
     .describe('HMAC secret for verifying telemetry signatures'),
+  UPDATE_BINARY_SIGNING_SECRET: z
+    .string()
+    .min(32)
+    .default('dev-binary-signing-secret-change-in-prod-32chars')
+    .describe('HMAC secret used to sign published update binaries'),
   CORS_ORIGIN: z
     .string()
     .default('http://localhost:5173')

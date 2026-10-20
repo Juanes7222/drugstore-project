@@ -1,6 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { BinaryStorageService } from './binary-storage.service';
+import { SignatureService } from './signature.service';
 import { TelemetryService } from './telemetry.service';
 import {
   VersionNotFoundException,
@@ -10,6 +16,7 @@ import {
   RolloutNotPausedException,
 } from './exceptions';
 import { createHash } from 'node:crypto';
+import type { Readable } from 'node:stream';
 
 /**
  * Core service for the auto-update system.
@@ -28,6 +35,7 @@ export class UpdatesService {
     private readonly prisma: PrismaService,
     private readonly binaryStorage: BinaryStorageService,
     private readonly telemetryService: TelemetryService,
+    private readonly signatureService: SignatureService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -52,7 +60,6 @@ export class UpdatesService {
     minPlan?: string | null;
     binaryFilename: string;
     binaryBuffer: Buffer;
-    signature: string;
   }) {
     // Check for duplicate version + channel
     const existing = await this.prisma.updateVersion.findUnique({
@@ -70,6 +77,10 @@ export class UpdatesService {
       data.binaryBuffer,
     );
 
+    // The signature is computed by the server: the publisher never gets to
+    // declare which bytes are trustworthy.
+    const signature = this.signatureService.computeBinarySignature(data.binaryBuffer);
+
     const defaultSchedule = [
       { percent: 5, afterDays: 0 },
       { percent: 25, afterDays: 3 },
@@ -83,7 +94,7 @@ export class UpdatesService {
         version: data.version,
         channel: data.channel as any,
         downloadUrl,
-        signature: data.signature,
+        signature,
         fileSize,
         fileHash,
         releaseNotes: data.releaseNotes ?? '',
@@ -225,6 +236,66 @@ export class UpdatesService {
       rolloutPercentage,
       minAppVersion: latestVersion.minAppVersion,
       maxAppVersion: latestVersion.maxAppVersion,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Downloads
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve a download request to a verified binary stream.
+   *
+   * The stored signature is recomputed over the stored bytes: a binary that
+   * was replaced in storage (or that was never published under that name) is
+   * refused instead of served.
+   */
+  async openVerifiedBinary(
+    channel: string,
+    version: string,
+    filename: string,
+  ): Promise<{ stream: Readable; size: number }> {
+    const releaseChannel = channel.toUpperCase();
+
+    const release = await this.prisma.updateVersion.findUnique({
+      where: {
+        version_channel: {
+          version,
+          channel: releaseChannel as any,
+        },
+      },
+    });
+    if (!release) {
+      throw new NotFoundException(`No update published for ${releaseChannel}/${version}`);
+    }
+
+    if (this.publishedFilename(release.downloadUrl) !== filename) {
+      throw new NotFoundException(
+        `No update published for ${releaseChannel}/${version}/${filename}`,
+      );
+    }
+
+    const actualSignature = await this.signatureService.computeBinarySignatureFromStream(
+      await this.binaryStorage.openBinaryStream(releaseChannel, version, filename),
+    );
+    if (
+      !this.signatureService.matchesBinarySignature(actualSignature, release.signature)
+    ) {
+      this.logger.error(
+        `Signature mismatch for ${releaseChannel}/${version}/${filename} — refusing to serve`,
+      );
+      throw new ForbiddenException(
+        'The update binary failed the integrity check.',
+      );
+    }
+
+    return {
+      stream: await this.binaryStorage.openBinaryStream(
+        releaseChannel,
+        version,
+        filename,
+      ),
+      size: release.fileSize,
     };
   }
 
@@ -469,6 +540,11 @@ export class UpdatesService {
     const hash = createHash('md5').update(workstationId).digest('hex');
     const num = parseInt(hash.substring(0, 8), 16);
     return num % 100;
+  }
+
+  /** The file name a release was published under, taken from its download URL. */
+  private publishedFilename(downloadUrl: string): string {
+    return downloadUrl.split('/').pop() ?? '';
   }
 
   /**
