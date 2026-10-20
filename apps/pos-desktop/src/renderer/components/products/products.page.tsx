@@ -113,6 +113,7 @@ export const ProductsPage: FC = () => {
       const result = await productService.listProducts({
         includeInactive: true,
         limit: 500,
+        includeTotal: false,
       });
       setProducts(
         (result.items as unknown as RawProduct[]).map(mapToDisplayProduct),
@@ -324,6 +325,7 @@ export const ProductsPage: FC = () => {
         const result = await productService.listProducts({
           includeInactive: true,
           limit: 500,
+          includeTotal: false,
         });
         setProducts(
           (result.items as unknown as RawProduct[]).map(mapToDisplayProduct),

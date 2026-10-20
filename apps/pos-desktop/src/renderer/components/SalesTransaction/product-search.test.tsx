@@ -317,4 +317,24 @@ describe("ProductSearch", () => {
       ).not.toBeInTheDocument();
     });
   });
+
+  describe("PS-11: debounced search", () => {
+    it("issues a single query for a burst of keystrokes", async () => {
+      const service = createMockService([baseProduct()]);
+      renderProductSearch(service);
+
+      const input = screen.getByRole("searchbox");
+      fireEvent.change(input, { target: { value: "a" } });
+      fireEvent.change(input, { target: { value: "ac" } });
+      fireEvent.change(input, { target: { value: "ace" } });
+
+      // Nothing hits the database until the burst settles.
+      expect(service.search).not.toHaveBeenCalled();
+
+      await waitFor(() => {
+        expect(service.search).toHaveBeenCalledTimes(1);
+      });
+      expect(service.search).toHaveBeenCalledWith("ace");
+    });
+  });
 });

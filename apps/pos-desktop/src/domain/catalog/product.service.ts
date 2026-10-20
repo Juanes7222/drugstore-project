@@ -380,7 +380,16 @@ export class ProductService {
     categoryId?: string;
     limit?: number;
     offset?: number;
-  }): Promise<{ items: ProductListItem[]; total: number }> {
+    /**
+     * Compute the total number of matching products.
+     *
+     * The count is a second pass over the matching rows and, on a real
+     * catalogue, cost more than the page itself.  Callers that only
+     * render a single page — the type-ahead pickers, the products grid —
+     * should pass `false`; `total` is then left undefined.
+     */
+    includeTotal?: boolean;
+  }): Promise<{ items: ProductListItem[]; total?: number }> {
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
     const {
@@ -390,6 +399,8 @@ export class ProductService {
       limit = 50,
       offset = 0,
     } = params ?? {};
+
+    const includeTotal = params?.includeTotal !== false;
 
     const where: Prisma.ProductWhereInput = {};
 
@@ -411,7 +422,9 @@ export class ProductService {
     }
 
     const [total, products] = await Promise.all([
-      this.prisma.product.count({ where }),
+      includeTotal
+        ? this.prisma.product.count({ where })
+        : Promise.resolve(undefined),
       this.prisma.product.findMany({
         where,
         include: {

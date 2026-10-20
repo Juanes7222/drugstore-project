@@ -178,7 +178,11 @@ export const SupplierReturnsPage: FC = () => {
     if (!query.trim()) { setProductResults([]); return; }
     setIsSearchingProduct(true);
     try {
-      const result = await productService.listProducts({ query, limit: 20 });
+      const result = await productService.listProducts({
+        query,
+        limit: 20,
+        includeTotal: false,
+      });
       setProductResults(
         result.items.map((p) => ({
           id: p.id,

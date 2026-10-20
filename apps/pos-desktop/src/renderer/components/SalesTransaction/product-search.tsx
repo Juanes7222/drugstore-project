@@ -34,6 +34,17 @@ import type { MovementsTarget } from "./product-movements-context-action";
 
 const PRINTABLE_KEY_RE = /^[a-zA-Z0-9ñáéíóúü.,;:ñÑ\-_@#$%&*()+=<>?¡¿!]/;
 
+/**
+ * Debounce for the catalogue query.
+ *
+ * The search reads the local PGlite database, which has a single
+ * connection — running it on every keystroke queued one full query per
+ * character behind the previous one, so typing felt slow.  This matches
+ * the other search inputs in the app (clients 250 ms, suppliers 300 ms,
+ * command palette 50 ms).
+ */
+const SEARCH_DEBOUNCE_MS = 200;
+
 interface ProductSearchProps {
   catalogService: CatalogService;
   onSelect: (item: CatalogItem) => void;
@@ -95,28 +106,31 @@ export const ProductSearch: FC<ProductSearchProps> = ({
     setIsLoading(true);
     setError(null);
 
-    catalogService
-      .search(trimmedQuery)
-      .then((items) => {
-        if (!cancelled) {
-          setResults(items);
-          setIsLoading(false);
-        }
-      })
-      .catch((searchError) => {
-        if (!cancelled) {
-          setResults([]);
-          setIsLoading(false);
-          setError(
-            searchError instanceof Error
-              ? searchError.message
-              : t("sales.search.error"),
-          );
-        }
-      });
+    const timer = setTimeout(() => {
+      catalogService
+        .search(trimmedQuery)
+        .then((items) => {
+          if (!cancelled) {
+            setResults(items);
+            setIsLoading(false);
+          }
+        })
+        .catch((searchError) => {
+          if (!cancelled) {
+            setResults([]);
+            setIsLoading(false);
+            setError(
+              searchError instanceof Error
+                ? searchError.message
+                : t("sales.search.error"),
+            );
+          }
+        });
+    }, SEARCH_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [trimmedQuery, catalogService, t]);
 

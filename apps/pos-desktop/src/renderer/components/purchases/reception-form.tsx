@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { PlusIcon, Trash2Icon } from "@/components/ui/icons";
 import type { CreateReceptionInput } from '../../../domain/purchases';
 import { formatCOP } from './purchases-helpers';
-import { SearchableSelect, type SearchableSelectOption } from './searchable-select';
+import { SearchableSelect, type SearchableSelectOption, TYPE_AHEAD_DEBOUNCE_MS } from './searchable-select';
 
 export interface ReceptionFormProps {
   data: CreateReceptionInput;
@@ -152,6 +152,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
           <SearchableSelect
             options={suppliers}
             onSearch={onSupplierSearch}
+            debounceMs={TYPE_AHEAD_DEBOUNCE_MS}
             onSelect={(opt) => onChange({ supplierId: opt.id })}
             selectedId={data.supplierId}
             placeholder={t('purchases.receptions.searchSupplier')}
@@ -168,6 +169,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
           <SearchableSelect
             options={purchaseOrders}
             onSearch={onPurchaseOrderSearch}
+            debounceMs={TYPE_AHEAD_DEBOUNCE_MS}
             onSelect={(opt) => onChange({ purchaseOrderId: opt.id })}
             selectedId={data.purchaseOrderId ?? null}
             placeholder={t('purchases.receptions.searchPurchaseOrder')}
@@ -243,6 +245,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                     <SearchableSelect
                       options={productResults}
                       onSearch={onProductSearch}
+                      debounceMs={TYPE_AHEAD_DEBOUNCE_MS}
                       onSelect={(opt) => {
                       const optWithCost = opt as SearchableSelectOption & { currentCost?: string | null };
                       const cost = optWithCost.currentCost ? Number(optWithCost.currentCost) : 0;

@@ -1493,10 +1493,38 @@ export async function expectToast(expected: string): Promise<void> {
   throw new Error(
     seen.length > 0
       ? `no toast carrying "${expected}" appeared within 20s. Toasts seen: ${seen.join(" | ")}` +
-        (await describeVisibleAlerts())
+        (await describeVisibleAlerts()) +
+        (await describeToastViewport())
       : `no toast carrying "${expected}" appeared within 20s` +
-        (await describeVisibleAlerts()),
+        (await describeVisibleAlerts()) +
+        (await describeToastViewport()),
   );
+}
+
+/**
+ * What the toast viewport holds, including the toasts that never became
+ * "ready".
+ *
+ * Sileo queues a toast that arrives while the viewport is full, and its
+ * `data-ready` flag only flips once the enter transition runs — so a toast
+ * that is queued, or one whose animation never ran because the window was
+ * busy, is invisible to the assertion above and invisible to the failure
+ * message. Dumping the viewport is what tells those two apart.
+ */
+async function describeToastViewport(): Promise<string> {
+  const texts = await browser.execute(() => {
+    const viewport = document.querySelector("[data-sileo-viewport]");
+    if (!viewport) return [];
+    return Array.from(viewport.querySelectorAll("[data-sileo-toast]")).map(
+      (el) => {
+        const ready = el.getAttribute("data-ready");
+        const text = (el.textContent ?? "").trim();
+        return `${text || "(empty)"}${ready === "true" ? "" : " [not ready]"}`;
+      },
+    );
+  });
+  if (!Array.isArray(texts) || texts.length === 0) return "";
+  return `. Toast viewport: ${texts.join(" | ")}`;
 }
 
 /**

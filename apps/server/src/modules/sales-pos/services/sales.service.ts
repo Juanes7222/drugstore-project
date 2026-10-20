@@ -221,6 +221,24 @@ export class SalesService {
     userId: string,
     workstationId: string,
     sourceOperationUuid?: string,
+    /**
+     * The local number the sale carried at the station that MADE it.
+     *
+     * The server's own sequence is dense, and for a sale that reached it
+     * directly that is the same number. For a RELAYED sale it is not: a peer
+     * that delivers a partial batch would make the server number the sale by
+     * replay order, and the origin's history would show a number that is not
+     * the origin's — which also makes the origin's pull create a SECOND row
+     * for the same sale (the pull skips a server sale whose
+     * (localNumber, workstation) is already taken, which is the tell that the
+     * two numbers are meant to be the same).
+     *
+     * When the origin's number is taken — the origin's local database was
+     * wiped and its numbering restarted — the server falls back to its own
+     * sequence: a number that does not match is a smaller problem than a
+     * sale that cannot be booked at all.
+     */
+    originLocalNumber?: bigint,
   ): Promise<any> {
     // Validate the optional domicilio payload before opening the transaction so
     // an invalid shape fails fast and surfaces as a 400 (BadRequestException)
@@ -282,10 +300,20 @@ export class SalesService {
       const lockKey = this.hashWorkstationId(workstationId);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
 
-      let localNumber: bigint;
+      // The origin's own number, when it is still free. Resolved once: a
+      // collision later falls back to the server's sequence (see below).
+      let originNumber: bigint | null = null;
+      if (
+        originLocalNumber !== undefined &&
+        !(await this.isLocalNumberTaken(tx, workstationId, originLocalNumber))
+      ) {
+        originNumber = originLocalNumber;
+      }
+
       for (let i = 0; i < 5; i++) {
         // Retry logic for unique constraint (belt-and-suspenders)
-        localNumber = await this.getNextLocalNumber(tx, workstationId);
+        const localNumber =
+          originNumber ?? (await this.getNextLocalNumber(tx, workstationId));
         try {
           const sale = await tx.sale.create({
             data: {
@@ -337,6 +365,10 @@ export class SalesService {
             err.meta?.target === 'ux_sale_local_per_ws'
           ) {
             // Local number unique constraint violation — retry with next number.
+            // A relayed sale whose ORIGIN number collides falls back to the
+            // server's own sequence: keeping the origin's number would fail
+            // the very same insert again.
+            originNumber = null;
             continue;
           }
           if (
@@ -998,6 +1030,25 @@ export class SalesService {
       select: { localNumber: true },
     });
     return latestSale ? latestSale.localNumber + 1n : 1n;
+  }
+
+  /**
+   * Whether a local number is already taken in a workstation's scope.
+   *
+   * The origin's number is only used when it is free: a number that is
+   * already booked belongs to another sale, and a collision there means the
+   * origin's local database was wiped and its numbering restarted.
+   */
+  private async isLocalNumberTaken(
+    tx: Prisma.TransactionClient,
+    workstationId: string,
+    localNumber: bigint,
+  ): Promise<boolean> {
+    const existing = await tx.sale.findFirst({
+      where: { sourceWorkstationId: workstationId, localNumber },
+      select: { id: true },
+    });
+    return existing !== null;
   }
 
   /**

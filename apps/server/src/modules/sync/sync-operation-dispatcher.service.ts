@@ -296,6 +296,31 @@ export class SyncOperationDispatcherService {
     return result.data;
   }
 
+  /**
+   * The local number a RELAYED sale carried at the station that made it.
+   *
+   * Only for hub-relayed operations: a sale that reached the server directly
+   * is numbered by the server's own sequence, which is the same number the
+   * origin had. A relayed one has to keep the origin's, or the origin's
+   * history and its pull disagree about which sale is which — and the pull
+   * would book a SECOND row for it, because the number the server carries is
+   * not the one the origin already has.
+   */
+  private extractOriginLocalNumber(
+    entry: { operationSource?: 'DIRECT' | 'LOCAL_HUB' },
+    payload: unknown,
+  ): bigint | undefined {
+    if (entry.operationSource !== 'LOCAL_HUB') return undefined;
+    const metadata = (payload as { metadata?: { localNumber?: unknown } })
+      ?.metadata;
+    const localNumber = metadata?.localNumber;
+    if (typeof localNumber !== 'number' || !Number.isInteger(localNumber)) {
+      return undefined;
+    }
+    if (localNumber < 1) return undefined;
+    return BigInt(localNumber);
+  }
+
   /** Replays a SALE_CONFIRMATION by creating and confirming the sale server-side. */
   private async handleSaleConfirmation(entry: SyncQueueEntry): Promise<void> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
@@ -434,6 +459,12 @@ export class SyncOperationDispatcherService {
       userId,
       workstationId,
       entry.operationUuid, // sourceOperationUuid — stored on Sale for idempotency
+      // A relayed sale keeps the number it had at the station that MADE it.
+      // The server's own sequence is dense, so a peer that delivers a partial
+      // batch would number the sale by replay order — and the origin's pull
+      // would then book a SECOND row for it, because the number it carries is
+      // not the one the origin already has.
+      this.extractOriginLocalNumber(entry, payload),
     );
     await this.salesService.confirm(
       (sale as { id: string }).id,

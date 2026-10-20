@@ -3,12 +3,12 @@
 **Created:** 2026-09-22
 **Scope:** Remaining tests to complete full production-confidence coverage of the
 offline-first sync system (POS ↔ server hub ↔ fiscal engine).
-**Current state:** 19 integration specs / 80 tests green (`apps/pos-desktop`,
+**Current state:** 19 integration specs / 81 tests green (`apps/pos-desktop`,
 vitest) — includes the 6 specs written from this backlog (see §2) and the LAN
 relay spec (`pos-lan-relay`, see §1). Verified twice consecutively against the
-persistent test DB (19/19 specs, 80/80 tests both runs). Unit suites: 51/51
+persistent test DB (19/19 specs, 81/81 tests both runs). Unit suites: 51/51
 dispatcher, 28/28 supplier-returns, 47/47 sync-push, 151/151 fiscal-engine,
-full POS vitest 6420/6420 green.
+full POS vitest 6437/6437 green, server unit 2471/2471, server e2e 133/133.
 
 ---
 
@@ -106,6 +106,18 @@ Bugs the integration suite already caught and fixed in production code:
     BigInt" — the sales pull was the first thing to hit it. Fixed in
     `vitest.integration.config.ts` (the polyfill is now a `setupFiles`
     entry, mirroring the server's e2e config).
+12. **A relayed sale was numbered by replay order, not by the origin.** The
+    server assigns every sale its own dense `localNumber` per workstation,
+    which coincides with the origin's number only when the origin's
+    numbering has no holes. A relayed sale therefore landed under a number
+    that was not the origin's — and the origin's pull, which skips a server
+    sale whose `(localNumber, workstation)` is already taken, could not tell
+    the two apart. The server now keeps the origin's number for a
+    hub-relayed sale (when it is still free: a wiped origin restarts its
+    numbering, and losing the sale would be worse than a number that does
+    not match), so a sale the cashier wrote off locally leaves the hole it
+    really left. Found by `pos-lan-relay` ("keeps the origin's numbering
+    when a sale never reached the server").
 
 ---
 

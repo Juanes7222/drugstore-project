@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import type { SupplierSearchResult } from '../../../domain/purchases';
 import type { OrderFormItem, OrderFormData } from './purchase-orders.page';
 import { PackageIcon, PlusIcon, XIcon } from "@/components/ui/icons";
-import { SearchableSelect } from './searchable-select';
+import { SearchableSelect, TYPE_AHEAD_DEBOUNCE_MS } from './searchable-select';
 import type { SearchableSelectOption } from './searchable-select';
 import { formatCOP } from './purchases-helpers';
 
@@ -159,6 +159,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
             <SearchableSelect
               options={supplierOptions}
               onSearch={onSupplierSearch}
+              debounceMs={TYPE_AHEAD_DEBOUNCE_MS}
               onSelect={handleSelectSupplier}
               selectedId={data.supplierId}
               placeholder={t('purchases.orders.searchSupplier')}
@@ -264,6 +265,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
                   <SearchableSelect
                     options={productOptions}
                     onSearch={onProductSearch}
+                    debounceMs={TYPE_AHEAD_DEBOUNCE_MS}
                     onSelect={(option) => {
                       const selected = productResults.find((p) => p.id === option.id);
                       const cost = selected?.currentCost ? Number(selected.currentCost) : 0;

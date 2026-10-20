@@ -28,9 +28,25 @@
  * version bump needed, no "already exists" errors.
  */
 
-import { PGlite } from '@electric-sql/pglite';
+import { PGlite, type Extension } from '@electric-sql/pglite';
 import { LOCAL_SCHEMA_SQL } from '@pharmacy/database/local-schema';
 import { fetchWithRetry } from '../common/fetch-with-retry';
+
+/**
+ * The `pg_trgm` extension, loaded from the app's own `/pglite/` asset path.
+ *
+ * The bundled `@electric-sql/pglite/contrib/pg_trgm` module resolves its
+ * bundle through `new URL('../pg_trgm.tar.gz', import.meta.url)`, which no
+ * longer points at a real file once Vite bundles the renderer.  Pointing the
+ * bundle at the same `/pglite/` path the WASM assets already use keeps dev
+ * and production on one code path.
+ */
+const PG_TRGM_EXTENSION: Extension = {
+  name: 'pg_trgm',
+  setup: async () => ({
+    bundlePath: new URL('/pglite/pg_trgm.tar.gz', window.location.href),
+  }),
+};
 
 /**
  * Compute a deterministic 32-bit hash of the processed schema SQL.
@@ -784,6 +800,38 @@ async function backfillEnumValues(client: PGlite): Promise<void> {
   }
 }
 
+/**
+ * Create the GIN trigram indexes the local product search relies on.
+ *
+ * The server-side catalogue search uses `pg_trgm` (migration
+ * `20260805000003_add_client_pagination_and_product_trgm_indexes`) so
+ * `ILIKE '%term%'` is index-backed.  The local PGlite database had no
+ * equivalent, so every POS product search fell back to a sequential scan of
+ * `Product` and `ProductBarcode` — the reason the sales search felt
+ * sluggish on a real catalogue.
+ *
+ * `CREATE INDEX IF NOT EXISTS` keeps this idempotent: it runs on every boot
+ * and only builds the index the first time.  An existing install pays the
+ * index build once, on the first boot after the upgrade.
+ */
+export async function ensureProductSearchIndexes(
+  client: PGlite,
+): Promise<void> {
+  await client.exec('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+  await client.exec(
+    `CREATE INDEX IF NOT EXISTS "Product_commercialName_trgm_idx"
+       ON "Product" USING GIN ("commercialName" gin_trgm_ops)`,
+  );
+  await client.exec(
+    `CREATE INDEX IF NOT EXISTS "Product_internalCode_trgm_idx"
+       ON "Product" USING GIN ("internalCode" gin_trgm_ops)`,
+  );
+  await client.exec(
+    `CREATE INDEX IF NOT EXISTS "ProductBarcode_barcode_trgm_idx"
+       ON "ProductBarcode" USING GIN ("barcode" gin_trgm_ops)`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Product.serverId backfill
 // ---------------------------------------------------------------------------
@@ -1107,6 +1155,7 @@ async function loadPgliteAssets(): Promise<{
   pgliteWasmModule: WebAssembly.Module;
   initdbWasmModule: WebAssembly.Module;
   fsBundle: Blob;
+  hasPgTrgm: boolean;
 }> {
   /**
    * Fetch a URL and return the raw ArrayBuffer, throwing on non-OK responses
@@ -1173,7 +1222,32 @@ async function loadPgliteAssets(): Promise<{
   const initdbWasmModule = await WebAssembly.compile(initdbWasmBuffer);
   const fsBundle = fsBundleResponse;
 
-  return { pgliteWasmModule, initdbWasmModule, fsBundle };
+  // The `pg_trgm` extension bundle is optional: without it the product
+  // search still works, it just falls back to a sequential scan.  Probing it
+  // here — before the PGlite instance exists — keeps a missing asset from
+  // taking the whole app down at boot.
+  const hasPgTrgm = await isPgTrgmAvailable();
+
+  return { pgliteWasmModule, initdbWasmModule, fsBundle, hasPgTrgm };
+}
+
+/**
+ * Check whether the `pg_trgm` extension bundle is reachable.
+ *
+ * Served from the same `/pglite/` directory as the WASM assets: by the
+ * Vite dev-server middleware in dev, and from the copied `dist/pglite/`
+ * directory in production.
+ */
+async function isPgTrgmAvailable(): Promise<boolean> {
+  try {
+    const response = await fetchWithRetry('/pglite/pg_trgm.tar.gz', {
+      attempts: 2,
+      baseDelayMs: 200,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function getLocalDatabase(): Promise<{
@@ -1228,11 +1302,13 @@ export async function getLocalDatabase(): Promise<{
       let pgliteWasmModule: WebAssembly.Module;
       let initdbWasmModule: WebAssembly.Module;
       let fsBundle: Blob;
+      let hasPgTrgm = false;
       try {
         const assets = await loadPgliteAssets();
         pgliteWasmModule = assets.pgliteWasmModule;
         initdbWasmModule = assets.initdbWasmModule;
         fsBundle = assets.fsBundle;
+        hasPgTrgm = assets.hasPgTrgm;
       } catch (assetsError) {
         console.error(
           '[local-database] FAILED to load PGlite WASM assets:',
@@ -1275,6 +1351,9 @@ export async function getLocalDatabase(): Promise<{
             pgliteWasmModule,
             initdbWasmModule,
             fsBundle,
+            ...(hasPgTrgm
+              ? { extensions: { pg_trgm: PG_TRGM_EXTENSION } }
+              : {}),
           });
           console.log('[local-database] PGlite created successfully.');
         } else {
@@ -1286,6 +1365,9 @@ export async function getLocalDatabase(): Promise<{
             pgliteWasmModule,
             initdbWasmModule,
             fsBundle,
+            ...(hasPgTrgm
+              ? { extensions: { pg_trgm: PG_TRGM_EXTENSION } }
+              : {}),
           });
         }
         window.removeEventListener('unhandledrejection', onRejection);
@@ -1346,6 +1428,26 @@ export async function getLocalDatabase(): Promise<{
           // eslint-disable-next-line no-console
           console.log(`[local-database] Schema upgraded (hash=${currentHash}).`);
         }
+      }
+
+      // ---- Product search indexes ----
+      // GIN trigram indexes so the local `ILIKE '%term%'` catalogue search
+      // is index-backed instead of a sequential scan.  Skipped when the
+      // `pg_trgm` bundle is unavailable — the search still works, just
+      // slower.  Idempotent: the index is only built the first time.
+      if (hasPgTrgm) {
+        try {
+          await ensureProductSearchIndexes(client);
+        } catch (indexError) {
+          console.warn(
+            '[local-database] Could not create the product search indexes:',
+            indexError,
+          );
+        }
+      } else {
+        console.warn(
+          '[local-database] pg_trgm unavailable — product search will use a sequential scan.',
+        );
       }
 
       // ---- Backfill enum values ----

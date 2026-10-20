@@ -1125,6 +1125,86 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
     expect(serverLot.currentStock).toBe(LOT_INITIAL_STOCK - SALE_QTY - 1);
   }, 120000);
 
+  it("keeps the origin's numbering when a sale never reached the server", async () => {
+    // A sale the cashier writes off locally leaves a hole in the origin's
+    // numbering. The server has to keep that hole: it is the only trace that
+    // a movement was lost, and a server-side sequence that renumbers the
+    // next sale would paper over it.
+    useTerminalSession(POS_WS_A_ID, tokenA, "pos-int-lan-session-a3");
+    const servicesA = makeTerminalServices(localPrismaA);
+    salesPosA = servicesA.salesPos;
+    cashShiftA = servicesA.cashShift;
+
+    const nextLocalNumber =
+      (await localPrismaA.sale.aggregate({
+        where: { sourceWorkstationId: POS_WS_A_ID },
+        _max: { localNumber: true },
+      }))._max.localNumber + 1n;
+
+    // Two sales made offline; the first one is written off before the relay.
+    const writtenOff = (await salesPosA.create({
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+    })) as { id: string };
+    await salesPosA.confirm(writtenOff.id, {
+      payments: [{ paymentMethodId: PM_CASH_ID, amount: 17850 }],
+    });
+    const kept = (await salesPosA.create({
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+    })) as { id: string };
+    await salesPosA.confirm(kept.id, {
+      payments: [{ paymentMethodId: PM_CASH_ID, amount: 17850 }],
+    });
+
+    // The recovery flow marks the queued operation DISCARDED: neither the
+    // hub nor the server ever hears about it.
+    const saleEntries = await localPrismaA.syncQueue.findMany({
+      where: { operationType: "SALE_CONFIRMATION" },
+      orderBy: { clientSequence: "asc" },
+    });
+    const writtenOffEntry = saleEntries[saleEntries.length - 2];
+    const keptEntry = saleEntries[saleEntries.length - 1];
+    await localPrismaA.syncQueue.update({
+      where: { id: writtenOffEntry.id },
+      data: { status: "DISCARDED" },
+    });
+
+    // ── The relay: the written-off sale never leaves the station ─────────
+    const engineA = await makeEngine(localPrismaA, POS_WS_A_ID);
+    await engineA.runCycle();
+    expect(hub.countFor(writtenOffEntry.operationUuid)).toBe(0);
+    expect(hub.countFor(keptEntry.operationUuid)).toBe(1);
+
+    const engineB = await makeEngine(localPrismaB, POS_WS_B_ID);
+    await engineB.runCycle();
+
+    const adopted = await localPrismaB.syncQueue.findFirstOrThrow({
+      where: { operationUuid: keptEntry.operationUuid },
+    });
+    expect(adopted.status).toBe("PENDING");
+
+    // ── And the server books it under the ORIGIN's number ────────────────
+    await pushToServer(localPrismaB, tokenB, POS_WS_B_ID);
+    await drainServerQueue();
+
+    const serverSale = await serverPrisma.sale.findFirstOrThrow({
+      where: { sourceOperationUuid: keptEntry.operationUuid },
+    });
+    // The kept sale keeps the number it had at the station that made it —
+    // the one AFTER the hole the written-off sale left.
+    expect(Number(serverSale.localNumber)).toBe(Number(nextLocalNumber) + 1);
+
+    // And the hole is still there: the number of the written-off sale was
+    // never used by anything else.
+    const serverNumbers = (
+      await serverPrisma.sale.findMany({
+        where: { sourceWorkstationId: SERVER_WS_A_ID },
+        select: { localNumber: true },
+      })
+    ).map((row) => Number(row.localNumber));
+    expect(serverNumbers).toContain(Number(nextLocalNumber) + 1);
+    expect(serverNumbers).not.toContain(Number(nextLocalNumber));
+  }, 120000);
+
   it("converges the relayed sale on the peer's own mirror", async () => {
     // The peer holds the operation but not the sale: until the server
     // applies it, B's books do not show it. The sales pull is what closes

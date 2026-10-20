@@ -33,11 +33,31 @@ export interface SearchableSelectOption {
   disabled?: boolean;
 }
 
+/**
+ * Debounce for the `onSearch` callback of a database-backed type-ahead.
+ *
+ * The parent queries the local database on every call, and that database
+ * has a single connection — one query per keystroke queued one query per
+ * keystroke behind it, which made typing a product name in the purchase
+ * forms feel slow.  Matches the other search inputs in the app (clients
+ * 250 ms, suppliers 300 ms, command palette 50 ms).
+ */
+export const TYPE_AHEAD_DEBOUNCE_MS = 250;
+
 export interface SearchableSelectProps {
   /** Current list of filtered options to display. */
   options: SearchableSelectOption[];
   /** Called whenever the user types in the input. */
   onSearch: (query: string) => void;
+  /**
+   * Delay `onSearch` by this many milliseconds.
+   *
+   * Set it for type-aheads backed by a database query — one query per
+   * keystroke queues one query per keystroke on the single local
+   * connection.  Leave it unset for comboboxes that filter an in-memory
+   * list, where the answer is already at hand.
+   */
+  debounceMs?: number;
   /** Called when an option is selected (via click or keyboard). */
   onSelect: (option: SearchableSelectOption) => void;
   /** Currently selected option id, or null. */
@@ -65,6 +85,7 @@ export interface SearchableSelectProps {
 export const SearchableSelect: FC<SearchableSelectProps> = ({
   options,
   onSearch,
+  debounceMs,
   onSelect,
   selectedId,
   placeholder,
@@ -83,6 +104,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const selectedOption = options.find((o) => o.id === selectedId);
   // When options are filtered, the selected item may not be in the visible
@@ -170,12 +192,26 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setQuery(value);
-      onSearch(value);
+      if (debounceMs && debounceMs > 0) {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => onSearch(value), debounceMs);
+      } else {
+        onSearch(value);
+      }
       setIsOpen(true);
       setHighlightedIndex(-1);
       updateDropdownPosition();
     },
-    [onSearch, updateDropdownPosition],
+    [onSearch, debounceMs, updateDropdownPosition],
+  );
+
+  // ── Cancel a pending search when the component goes away ────────────
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    [],
   );
 
   // ── Focus handler ────────────────────────────────────────────────────
@@ -193,6 +229,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   const handleSelect = useCallback(
     (option: SearchableSelectOption) => {
       if (option.disabled) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       setQuery('');
       setIsOpen(false);
       setHighlightedIndex(-1);

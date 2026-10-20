@@ -23,12 +23,18 @@ export async function collectPages<T>(
   }
 }
 
-/** Offset-based fetch loop — collects every page until the dataset is read. */
+/**
+ * Offset-based fetch loop — collects every page until the dataset is read.
+ *
+ * Stops on a short page, so the loader does not need the service to
+ * report a total: a page that comes back with fewer rows than the limit
+ * is the last one.  A reported `total` is still used as an early stop.
+ */
 export async function collectOffset<T>(
   fetchPage: (
     offset: number,
     limit: number,
-  ) => Promise<{ items: T[]; total: number }>,
+  ) => Promise<{ items: T[]; total?: number }>,
   limit = 500,
 ): Promise<T[]> {
   const all: T[] = [];
@@ -37,7 +43,10 @@ export async function collectOffset<T>(
   for (;;) {
     const result = await fetchPage(offset, limit);
     all.push(...result.items);
-    if (all.length >= result.total || result.items.length === 0) {
+    if (
+      result.items.length < limit ||
+      (result.total !== undefined && all.length >= result.total)
+    ) {
       return all;
     }
     offset += limit;

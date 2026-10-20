@@ -388,6 +388,33 @@ describe("ProductService", () => {
         commissionEndsAt: null,
       });
     });
+
+    it("skips the total count when the caller opts out", async () => {
+      prisma.product.count.mockResolvedValue(999);
+      prisma.product.findMany.mockResolvedValue([]);
+
+      const result = await service.listProducts({
+        query: "acet",
+        limit: 20,
+        includeTotal: false,
+      });
+
+      // The count is a second pass over every matching row — on a real
+      // catalogue it cost more than the page itself.
+      expect(prisma.product.count).not.toHaveBeenCalled();
+      expect(result.total).toBeUndefined();
+      expect(result.items).toEqual([]);
+    });
+
+    it("counts by default", async () => {
+      prisma.product.count.mockResolvedValue(7);
+      prisma.product.findMany.mockResolvedValue([]);
+
+      const result = await service.listProducts({ query: "acet", limit: 20 });
+
+      expect(prisma.product.count).toHaveBeenCalled();
+      expect(result.total).toBe(7);
+    });
   });
 
   // ---------------------------------------------------------------

@@ -52,7 +52,8 @@ export interface ExportServiceContext {
       categoryId?: string;
       limit?: number;
       offset?: number;
-    }): Promise<{ items: ProductListItem[]; total: number }>;
+      includeTotal?: boolean;
+    }): Promise<{ items: ProductListItem[]; total?: number }>;
   };
   inventoryLotsService: {
     getLots(params?: {
