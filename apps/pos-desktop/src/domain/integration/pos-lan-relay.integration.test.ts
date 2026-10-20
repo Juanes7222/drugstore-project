@@ -107,6 +107,7 @@ import {
 import { createInventoryLotsService } from "../inventory-lots/inventory-lots.service";
 import { createInventoryAdjustmentsService } from "../inventory-adjustments/inventory-adjustments.service";
 import { createReturnsService } from "../returns/returns.service";
+import { createProductService } from "../catalog/product.service";
 import {
   CashShiftService,
   createCashShiftService,
@@ -142,6 +143,16 @@ class FakeHub {
   private readonly known = new Set<string>();
   private readonly baseMs: number;
   private seq = 0;
+  /**
+   * The address the stations see this hub under.
+   *
+   * The pull cursor is keyed by it, so moving the hub to another address is
+   * what a hub election does to a peer: the cursor no longer applies and the
+   * whole buffer is read again.
+   */
+  address = "hub://fake-hub";
+  /** How many times the buffer was read. */
+  pullCount = 0;
   /** Off by default, exactly like the Rust hub. See deliverOwnOperationsToEveryone. */
   private deliverOwnOperations = false;
 
@@ -191,6 +202,7 @@ class FakeHub {
     since: string,
     workstationId: string,
   ): { operations: LocalOperation[]; nextSince: string } {
+    this.pullCount += 1;
     const matched = this.buffer
       .filter(
         (entry) =>
@@ -239,7 +251,10 @@ vi.mock("@tauri-apps/api/core", () => ({
     const hub = hubRef.current;
     if (!hub) throw new Error("the fake hub is not installed");
     if (command === "get_local_sync_status") {
-      return { currentHubAddress: "hub://fake-hub", backoffUntil: null };
+      return {
+        currentHubAddress: hub.address,
+        backoffUntil: null,
+      };
     }
     if (command === "push_to_hub") {
       return hub.push((args as { operations: LocalOperation[] }).operations);
@@ -305,6 +320,8 @@ const SERVER_CREDIT_ALLOCATION_B_ID = uuidFrom(
 
 /** The generic consumer every anonymous sale falls back to. */
 const GENERIC_CLIENT_ID = "00000000-0000-0000-0000-000000000001";
+/** The product the relay spec creates; the cleanup knows it by name. */
+const RELAYED_PRODUCT_NAME = "Producto relayed E2E";
 
 // Local (POS) ids. The local product row mirrors the server product with the
 // SAME id (established-pharmacy case).
@@ -419,6 +436,21 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
     });
     await serverPrisma.fiscalResolution.deleteMany({
       where: { id: { in: resolutionIds } },
+    });
+    await serverPrisma.productPriceHistory.deleteMany({
+      where: { product: { commercialName: RELAYED_PRODUCT_NAME } },
+    });
+    await serverPrisma.productTaxHistory.deleteMany({
+      where: { product: { commercialName: RELAYED_PRODUCT_NAME } },
+    });
+    await serverPrisma.productCostHistory.deleteMany({
+      where: { product: { commercialName: RELAYED_PRODUCT_NAME } },
+    });
+    await serverPrisma.productBarcode.deleteMany({
+      where: { product: { commercialName: RELAYED_PRODUCT_NAME } },
+    });
+    await serverPrisma.product.deleteMany({
+      where: { commercialName: RELAYED_PRODUCT_NAME },
     });
     await serverPrisma.productPriceHistory.deleteMany({
       where: { productId: SERVER_PRODUCT_ID },
@@ -1719,6 +1751,147 @@ describe("POS ↔ Server integration — the LAN relay between two workstations"
       where: { id: SERVER_LOT_ID },
     });
     expect(serverLotAfter.currentStock).toBe(serverLotAtStart.currentStock);
+  }, 120000);
+
+  it("adopts nothing twice when the hub moves and the peer re-reads the whole buffer", async () => {
+    // The hub is elected, and the election can move: the peer's pull cursor
+    // is keyed by the hub's address, so a new address means the cursor no
+    // longer applies and the peer reads the WHOLE buffer again — every
+    // operation it already has included.
+    useTerminalSession(POS_WS_A_ID, tokenA, "pos-int-lan-session-a8");
+    const servicesA = makeTerminalServices(localPrismaA);
+    salesPosA = servicesA.salesPos;
+    cashShiftA = servicesA.cashShift;
+
+    const sale = (await salesPosA.create({
+      items: [{ productId: PRODUCT_ID, quantity: 1 }],
+    })) as { id: string };
+    await salesPosA.confirm(sale.id, {
+      payments: [{ paymentMethodId: PM_CASH_ID, amount: 17850 }],
+    });
+
+    const entry = await localPrismaA.syncQueue.findFirstOrThrow({
+      where: { operationType: "SALE_CONFIRMATION" },
+      orderBy: { clientSequence: "desc" },
+    });
+
+    // The peer reads the buffer and adopts the operation.
+    const engineA = await makeEngine(localPrismaA, POS_WS_A_ID);
+    await engineA.runCycle();
+    const engineB = await makeEngine(localPrismaB, POS_WS_B_ID);
+    await engineB.runCycle();
+
+    const before = await localPrismaB.syncQueue.count({
+      where: { operationUuid: entry.operationUuid },
+    });
+    expect(before).toBe(1);
+
+    // ── The hub moves to another address ────────────────────────────────
+    const pullsBefore = hub.pullCount;
+    hub.address = "hub://another-machine";
+
+    const engineB2 = await makeEngine(localPrismaB, POS_WS_B_ID);
+    const cycle = await engineB2.runCycle();
+    expect(cycle.outcome).toBe("ok");
+    // The buffer WAS read again from the start (the cursor no longer
+    // applies)…
+    expect(hub.pullCount).toBeGreaterThan(pullsBefore);
+    // …and nothing new was adopted: the operation was already known.
+    expect(cycle.adoptedFromHub).toBe(0);
+
+    // The peer did NOT adopt the operation a second time.
+    const after = await localPrismaB.syncQueue.count({
+      where: { operationUuid: entry.operationUuid },
+    });
+    expect(after).toBe(1);
+
+    // And the server still ends up with ONE sale for it.
+    await pushToServer(localPrismaB, tokenB, POS_WS_B_ID);
+    await drainServerQueue();
+
+    const serverSales = await serverPrisma.sale.findMany({
+      where: { sourceOperationUuid: entry.operationUuid },
+    });
+    expect(serverSales).toHaveLength(1);
+  }, 120000);
+
+  it("relays a catalogue creation and the server keeps ONE product with the right identity", async () => {
+    // A product created offline is the case where the server and the station
+    // DISAGREE on identity: the server assigns its own id and keeps the
+    // station's uuid as `sourceProductId`. The relay forwards the payload
+    // byte-for-byte, so the remapping has to survive the trip — and the
+    // product must not be created twice when both stations push it.
+    useTerminalSession(POS_WS_A_ID, tokenA, "pos-int-lan-session-a9");
+    const productService = createProductService(localPrismaA, {
+      requireRole: () => useLocalSessionStore.getState().session!,
+    } as any);
+
+    const created = (await productService.createProduct({
+      commercialName: "Producto relayed E2E",
+      laboratory: "Genfar",
+      saleType: "FREE_SALE",
+      price: { price: 8500 },
+      tax: { taxSchemeId: SERVER_TAX_SCHEME_ID },
+      barcodes: [
+        { barcode: "7709998887776", barcodeType: "EAN13", isPrimary: true },
+      ],
+    })) as { id: string; internalCode: string };
+
+    const entry = await localPrismaA.syncQueue.findFirstOrThrow({
+      where: { operationType: "PRODUCT_CREATION" },
+      orderBy: { clientSequence: "desc" },
+    });
+
+    // ── The relay ───────────────────────────────────────────────────────
+    const engineA = await makeEngine(localPrismaA, POS_WS_A_ID);
+    await engineA.runCycle();
+    const engineB = await makeEngine(localPrismaB, POS_WS_B_ID);
+    await engineB.runCycle();
+
+    const adopted = await localPrismaB.syncQueue.findFirstOrThrow({
+      where: { operationUuid: entry.operationUuid },
+    });
+    expect(adopted.status).toBe("PENDING");
+
+    // ── The peer delivers it ────────────────────────────────────────────
+    await pushToServer(localPrismaB, tokenB, POS_WS_B_ID);
+    await drainServerQueue();
+
+    // ONE product, with the server's own id and the origin's uuid kept as the
+    // forward reference the sale replay resolves against.
+    const serverProducts = await serverPrisma.product.findMany({
+      where: { sourceProductId: created.id },
+      include: { priceHistories: true, taxHistories: true, barcodes: true },
+    });
+    expect(serverProducts).toHaveLength(1);
+    const serverProduct = serverProducts[0];
+    expect(serverProduct.commercialName).toBe("Producto relayed E2E");
+    expect(serverProduct.internalCode).toMatch(/^P\d+$/);
+    expect(serverProduct.priceHistories).toHaveLength(1);
+    expect(Number(serverProduct.priceHistories[0].price)).toBe(8500);
+    expect(serverProduct.taxHistories).toHaveLength(1);
+    expect(serverProduct.barcodes.map((b) => b.barcode)).toContain(
+      "7709998887776",
+    );
+
+    // ── And the origin pushing it too changes nothing ───────────────────
+    await pushToServer(localPrismaA, tokenA, POS_WS_A_ID);
+    await drainServerQueue();
+
+    expect(
+      await serverPrisma.product.count({
+        where: { sourceProductId: created.id },
+      }),
+    ).toBe(1);
+
+    // The origin still learns the server's id: the duplicate push is
+    // answered with the id the first one stored, so the local row is
+    // reconciled even though this station was not the one that won the race.
+    const localProduct = await localPrismaA.product.findUniqueOrThrow({
+      where: { id: created.id },
+    });
+    expect(localProduct.serverId).toBe(serverProduct.id);
+    expect(localProduct.internalCode).toMatch(/^P\d+$/);
   }, 120000);
 
   it("converges the relayed sale on the peer's own mirror", async () => {

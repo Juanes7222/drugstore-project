@@ -3,10 +3,10 @@
 **Created:** 2026-09-22
 **Scope:** Remaining tests to complete full production-confidence coverage of the
 offline-first sync system (POS ↔ server hub ↔ fiscal engine).
-**Current state:** 19 integration specs / 85 tests green (`apps/pos-desktop`,
+**Current state:** 19 integration specs / 87 tests green (`apps/pos-desktop`,
 vitest) — includes the 6 specs written from this backlog (see §2) and the LAN
 relay spec (`pos-lan-relay`, see §1). Verified twice consecutively against the
-persistent test DB (19/19 specs, 85/85 tests both runs). Unit suites: 51/51
+persistent test DB (19/19 specs, 87/87 tests both runs). Unit suites: 51/51
 dispatcher, 28/28 supplier-returns, 47/47 sync-push, 151/151 fiscal-engine,
 full POS vitest 6437/6437 green, server unit 2471/2471, server e2e 133/133.
 
@@ -45,12 +45,17 @@ origin's numbering, and converges on the peer's mirror — for:
   the batch short once),
 - a **client return** (the stock goes back to its batch, one credit note,
   the refund issued once),
+- a **catalogue creation** (one product, with the server's own id and the
+  origin's uuid kept as the forward reference the sale replay resolves
+  against),
 
-and it covers the three scenarios that make the relay necessary:
+and it covers the four scenarios that make the relay necessary:
 
 - the **origin is gone** before the internet returns (the peer still
   delivers the sale, and the sale keeps the origin's identity),
 - **both stations push at the same time** (the server applies it once),
+- the **hub moves** to another machine (the peer's cursor no longer
+  applies, it reads the whole buffer again, and it adopts nothing twice),
 - the **hub re-delivers** what it already holds (the adoption stays
   idempotent).
 
@@ -64,9 +69,8 @@ covered through the relay:
 | `SUPPLIER_RETURN_CONFIRMATION` | Stock leaving the store once (the bug the backlog already recorded) |
 | `CLIENT_CREDIT_PAYMENT` / `_ANNULMENT` | A receivable created and cancelled once, balance exact |
 | `CLIENT_CREATION` / `UPDATE` / `DEACTIVATE` | The client row exists once (the server maps the id) |
-| `PRODUCT_CREATION` / `UPDATE` | The catalogue row exists once, with the server's internal code |
 
-Two gaps outside the operation types:
+One gap outside the operation types:
 
 - **The real hub's dedup had no test.** The Rust hub's `handle_push` answers a
   replayed operation as accepted without storing a second copy, and
@@ -76,10 +80,6 @@ Two gaps outside the operation types:
   contract and the conflict identity). They now have tests — in the hub's
   own `#[cfg(test)]` module, since the handlers need its on-disk operation
   log open (which is why they were left untested until now).
-- **The hub changing is not covered end to end.** The engine's unit test
-  pins the cursor reset when the hub address changes; nothing proves that a
-  peer re-reading the whole buffer after the hub changed still adopts each
-  operation only once.
 
 Bugs the integration suite already caught and fixed in production code:
 
