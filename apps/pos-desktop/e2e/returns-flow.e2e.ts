@@ -35,11 +35,17 @@ import {
   describeSyncQueue,
   waitForNewServerSale,
   waitForServerClientReturn,
+  fetchServerClientReturns,
   LOT_ACETAMINOFEN,
   FOREIGN_SALE_LOCAL_NUMBER,
   touchForeignSale,
 } from "./server-state";
-import { fetchLocalSales, fetchLocalSaleItems } from "./local-state";
+import {
+  fetchLocalClientReturns,
+  fetchLocalSales,
+  fetchLocalSaleItems,
+} from "./local-state";
+import { assertNoDefects, reconcileRow } from "./reconcile";
 
 // `describe` / `it` / `beforeEach` are Mocha globals injected by the WDIO runner.
 /* global describe, it, beforeEach */
@@ -186,6 +192,82 @@ describe("Returns flow (real Tauri app against the real backend)", () => {
           `Sync queue: ${await describeSyncQueue()}`,
       },
     );
+
+    // ---- Local side: the row the cashier refunded against ----
+    //
+    // The POS records the return locally the moment it is confirmed, so the
+    // local row exists long before the replay lands. Reading only the server
+    // side would miss a return the till believes it made and the books do
+    // not — so both sides are read and diffed.
+    const localReturns = await fetchLocalClientReturns();
+    expect(localReturns.length).toBeGreaterThan(0);
+    const localReturn = localReturns[0];
+
+    const serverReturns = await fetchServerClientReturns();
+    expect(serverReturns.length).toBeGreaterThan(0);
+    const serverReturn = serverReturns[0];
+
+    // The return's own id is the POS-originated one on both sides (the
+    // dispatcher passes it as the server row id, which is what makes the
+    // replay idempotent), so this is the strongest link between the two rows.
+    expect(serverReturn.id).toBe(localReturn.id);
+
+    assertNoDefects(
+      reconcileRow(
+        `ClientReturn ${localReturn.id}`,
+        {
+          state: localReturn.state,
+          sequentialNumber: localReturn.sequentialNumber,
+          refundAmount: localReturn.refundAmount,
+          subtotalReturned: localReturn.subtotalReturned,
+          taxReturned: localReturn.taxReturned,
+          refundMethodId: localReturn.refundMethodId,
+          reason: localReturn.reason,
+        },
+        {
+          state: serverReturn.state,
+          sequentialNumber: serverReturn.sequentialNumber,
+          refundAmount: serverReturn.refundAmount,
+          subtotalReturned: serverReturn.subtotalReturned,
+          taxReturned: serverReturn.taxReturned,
+          refundMethodId: serverReturn.refundMethodId,
+          reason: serverReturn.reason,
+        },
+        {
+          state: { kind: "text" },
+          sequentialNumber: { kind: "number" },
+          refundAmount: { kind: "money" },
+          subtotalReturned: { kind: "money" },
+          taxReturned: { kind: "money" },
+          refundMethodId: { kind: "text" },
+          reason: { kind: "text" },
+        },
+      ),
+      "verified return R01",
+    );
+
+    // The refunded amount is the number the client was given: it must be the
+    // one the server booked, to the cent.
+    expect(serverReturn.refundAmount).toBeCloseTo(localReturn.refundAmount, 2);
+    expect(serverReturn.refundAmount).toBeCloseTo(ACETAMINOFEN_TOTAL, 2);
+
+    // ---- And the stock the return reversed into the same lots on both sides.
+    const localLots = (localReturn.items[0]?.lots ?? "")
+      .split(",")
+      .filter(Boolean)
+      .sort();
+    const serverLots = serverReturn.lotQuantities
+      .map((lot) => `${lot.lotId}×${lot.quantity}`)
+      .sort();
+    expect(serverLots).toEqual(localLots);
+
+    // The item itself: what was returned, and what it was worth.
+    expect(serverReturn.items).toHaveLength(localReturn.items.length);
+    const serverItem = serverReturn.items[0];
+    const localItem = localReturn.items[0];
+    expect(serverItem.quantity).toBe(localItem.quantity);
+    expect(serverItem.totalAmount).toBeCloseTo(localItem.totalAmount, 2);
+    expect(serverItem.taxAmount).toBeCloseTo(localItem.taxAmount, 2);
   });
 
   it("E2E-R02: cross-workstation return with manager PIN is recorded server-side", async () => {

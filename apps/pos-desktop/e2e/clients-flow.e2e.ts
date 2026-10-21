@@ -35,10 +35,16 @@ import {
 import {
   waitForServerClient,
   waitForServerClientActiveState,
+  fetchServerClient,
   fetchServerClients,
   waitForTerminalSyncOperation,
 } from "./server-state";
-import { fetchLocalClients } from "./local-state";
+import {
+  fetchLocalClient,
+  fetchLocalClients,
+  waitForLocalSyncStatus,
+} from "./local-state";
+import { assertNoDefects, reconcileRow } from "./reconcile";
 
 // `describe` / `it` / `beforeEach` are Mocha globals injected by the WDIO runner.
 /* global describe, it, beforeEach */
@@ -205,6 +211,15 @@ describe("Clients flow (real Tauri app against the real backend)", () => {
     const replay = await waitForTerminalSyncOperation("CLIENT_CREATION");
     expect(replay.status).toBe("COMPLETED");
 
+    // ---- The POS's own outbox.
+    //
+    // The server's queue row says the operation was applied; this one says
+    // the DEVICE is no longer waiting for it. They are different claims and
+    // both are worth making: an operation the server applied but the device
+    // still shows as pending is a till that would push it again.
+    const outbox = await waitForLocalSyncStatus("CLIENT_CREATION", "COMPLETED");
+    expect(outbox.payload).toContain(NEW_CLIENT.identificationNumber);
+
     const server = await waitForServerClient(NEW_CLIENT.identificationNumber);
     expect(server.identificationType).toBe("CC");
     expect(server.fullName).toBe(NEW_CLIENT.fullName);
@@ -218,6 +233,44 @@ describe("Clients flow (real Tauri app against the real backend)", () => {
     // client was saved with no location at all.
     expect(server.municipality).toBe(NEW_CLIENT.municipality);
     expect(server.department).toBe(NEW_CLIENT.department);
+
+    // ---- Full-width reconciliation of the two rows.
+    //
+    // The assertions above check the fields somebody thought to look at. This
+    // one diffs the union of BOTH sides' field names, so a column the replay
+    // silently drops — the credit limit, the consent stamp, the data-subject
+    // request status — becomes a finding instead of staying invisible.
+    const localRow = await fetchLocalClient(NEW_CLIENT.identificationNumber);
+    const serverRow = await fetchServerClient(NEW_CLIENT.identificationNumber);
+    expect(localRow).not.toBeNull();
+    expect(serverRow).not.toBeNull();
+
+    assertNoDefects(
+      reconcileRow(
+        `Client ${NEW_CLIENT.identificationNumber}`,
+        localRow as Record<string, unknown>,
+        serverRow as Record<string, unknown>,
+        {
+          identificationType: { kind: "text" },
+          identificationNumber: { kind: "text" },
+          fullName: { kind: "text" },
+          email: { kind: "text" },
+          phone: { kind: "text" },
+          address: { kind: "text" },
+          municipality: { kind: "text" },
+          department: { kind: "text" },
+          isActive: { kind: "text" },
+          creditLimit: { kind: "money" },
+          consentGivenAt: { kind: "date" },
+          consentVersion: { kind: "text" },
+          dataSubjectRequestStatus: { kind: "text" },
+          classificationId: { kind: "text" },
+          classificationType: { kind: "text" },
+          classificationDiscountPercentage: { kind: "money" },
+        },
+      ),
+      "client C01",
+    );
   });
 
   it("E2E-C02: editing a client through the detail dialog replays the change server-side", async () => {

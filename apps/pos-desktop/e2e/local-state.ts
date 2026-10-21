@@ -24,6 +24,7 @@
  * time out before (see the note at the top of e2e/helpers.ts).
  */
 import { browser } from "@wdio/globals";
+import { WORKSTATION_ID } from "./workstation-id";
 
 interface DbDevtools {
   reset(opts?: { force?: boolean }): Promise<void>;
@@ -128,6 +129,99 @@ export async function fetchLocalClients(): Promise<
 }
 
 /**
+ * The most recent sync-queue entry of `operationType`.
+ *
+ * The outbox is the POS's own record of what it still owes the server, and it
+ * is the ONLY place a refused operation can be seen: the operation is not
+ * applied anywhere, so nothing else on the device or on the server shows that
+ * it was ever attempted.
+ *
+ * "Most recent" is by the POS's own client sequence, so it is the operation
+ * this run made last — an earlier spec's row would otherwise match a query
+ * for the operation type alone.
+ */
+export async function fetchLastLocalSyncEntry(
+  operationType: string,
+): Promise<LocalSyncQueueRow | null> {
+  const rows = await queryLocal<LocalSyncQueueRow>(
+    `SELECT "operationType", status, payload,
+            "lastErrorMessage", "failureCategory"
+       FROM "SyncQueue"
+      WHERE "operationType"::text = $1
+      ORDER BY "clientSequence" DESC
+      LIMIT 1`,
+    [operationType],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Wait until the most recent sync-queue entry of `operationType` reaches
+ * `status`.
+ *
+ * The wait is for the POS's own outbox, not for the server: this is the
+ * state the cashier can act on, and the one the sync-health screen shows.
+ */
+export async function waitForLocalSyncStatus(
+  operationType: string,
+  status: string,
+  timeoutMs = 120_000,
+): Promise<LocalSyncQueueRow> {
+  const deadline = Date.now() + timeoutMs;
+  let seen = "no entry yet";
+
+  while (Date.now() < deadline) {
+    const entry = await fetchLastLocalSyncEntry(operationType);
+    if (entry) {
+      if (entry.status === status) return entry;
+      seen = `${entry.status}${
+        entry.lastErrorMessage ? ` (${entry.lastErrorMessage})` : ""
+      }`;
+    } else {
+      seen = "no entry yet";
+    }
+    await browser.pause(1_000);
+  }
+
+  throw new Error(
+    `the last ${operationType} entry in the outbox did not reach ${status} ` +
+      `within ${timeoutMs}ms (last seen: ${seen})`,
+  );
+}
+
+/**
+ * A locally held client, at FULL width.
+ *
+ * The narrow reader above is enough to prove the cart's search works, but it
+ * cannot prove the local row agrees with the server's: a client whose email,
+ * credit limit or active flag was dropped on the way down still answers a
+ * search. This reader carries every comparable field so the two stores can be
+ * reconciled field by field (see `reconcile.ts`).
+ *
+ * The classification is read as a flat pair of columns because the local table
+ * holds a `classificationId` pointer while the server's row carries the
+ * discount the sale is priced by — the pointer is meaningless on its own.
+ */
+export async function fetchLocalClient(
+  identificationNumber: string,
+): Promise<Record<string, unknown> | null> {
+  const rows = await queryLocal<Record<string, unknown>>(
+    `SELECT c."identificationType", c."identificationNumber", c."fullName",
+            c.email, c.phone, c.address, c.municipality, c.department,
+            c."isActive", c."creditLimit", c."consentGivenAt",
+            c."consentVersion", c."dataSubjectRequestStatus",
+            c."classificationId",
+            cl.type AS "classificationType",
+            cl."discountPercentage" AS "classificationDiscountPercentage"
+       FROM "Client" c
+       LEFT JOIN "ClientClassification" cl ON cl.id = c."classificationId"
+      WHERE c."identificationNumber" = $1`,
+    [identificationNumber],
+  );
+  return rows[0] ?? null;
+}
+
+/**
  * Sales the POS holds locally, with the workstation each belongs to.
  *
  * The failure text for a sale that never arrives is otherwise unreadable: a
@@ -150,6 +244,26 @@ export async function fetchLocalSales(): Promise<
        FROM "Sale" ORDER BY "localNumber"`,
   );
   return rows;
+}
+
+/**
+ * The highest local number THIS workstation has used for a sale.
+ *
+ * Scoped to the workstation on purpose: the numbering is per-workstation
+ * (`SalesPosService.getNextLocalNumber` filters on `sourceWorkstationId`), and
+ * the mirror also holds other stations' sales — the fixture's foreign sale
+ * carries the number 9001. An unscoped MAX would report 9001 as "the last
+ * number", and every sale this workstation makes after that would look like it
+ * did not happen.
+ */
+export async function fetchLocalLatestSaleNumber(): Promise<number> {
+  const rows = await queryLocal<{ latest: string | number | null }>(
+    `SELECT MAX("localNumber")::text AS "latest"
+       FROM "Sale"
+      WHERE "sourceWorkstationId" = $1`,
+    [WORKSTATION_ID],
+  );
+  return Number(rows[0]?.latest ?? 0);
 }
 
 /**
@@ -466,6 +580,10 @@ export interface LocalSyncQueueRow {
   operationType: string;
   status: string;
   payload: string;
+  /** The reason the server gave for refusing the operation, when it refused. */
+  lastErrorMessage: string | null;
+  /** The bucket the failure was classified into (VALIDATION, BUSINESS_RULE…). */
+  failureCategory: string | null;
 }
 
 /**
@@ -487,7 +605,8 @@ export async function fetchLocalSyncQueue(
   // text"). The helper was never called, so the query was never executed and
   // the mistake sat there unnoticed.
   return queryLocal<LocalSyncQueueRow>(
-    `SELECT "operationType", status, payload
+    `SELECT "operationType", status, payload,
+            "lastErrorMessage", "failureCategory"
        FROM "SyncQueue"
       WHERE $1::text IS NULL OR "operationType"::text = $1
       ORDER BY "clientSequence"`,
@@ -542,6 +661,136 @@ export async function fetchLocalSuppliers(): Promise<
   );
   // `creditLimit` is a NUMERIC column, so PGlite hands it back as a string.
   return rows.map((row) => ({ ...row, creditLimit: Number(row.creditLimit) }));
+}
+
+// ---------------------------------------------------------------------------
+// Client returns
+// ---------------------------------------------------------------------------
+
+export interface LocalClientReturnItem {
+  saleItemId: string;
+  quantity: number;
+  unitPriceAtSale: number;
+  unitPriceAtReturn: number;
+  taxAmount: number;
+  totalAmount: number;
+  /** Lot reversals, as `lotId×quantity` pairs. */
+  lots: string;
+}
+
+export interface LocalClientReturn {
+  id: string;
+  sequentialNumber: number;
+  state: string;
+  saleId: string;
+  clientId: string;
+  refundAmount: number;
+  subtotalReturned: number;
+  taxReturned: number;
+  refundMethodId: string;
+  reason: string | null;
+  notes: string | null;
+  cashShiftId: string;
+  items: LocalClientReturnItem[];
+}
+
+/**
+ * The client returns the POS holds locally, newest first.
+ *
+ * The return is the refund the CASHIER hands over, so its local row is what the
+ * register shows and what the drawer is balanced against — the server's copy is
+ * the far one. A return that reached the server with a different amount, a
+ * different lot assignment or a different tax split is a cashier who refunded
+ * $595 and the books say $500, and only a field-by-field diff of the two rows
+ * catches it (see `reconcile.ts`).
+ *
+ * The lot assignments are flattened into one string per item, the same way the
+ * sale's are, so both projections can be compared with one comparable shape.
+ */
+export async function fetchLocalClientReturns(): Promise<LocalClientReturn[]> {
+  const rows = await queryLocal<{
+    id: string;
+    sequentialNumber: number;
+    state: string;
+    saleId: string;
+    clientId: string;
+    refundAmount: string;
+    subtotalReturned: string;
+    taxReturned: string;
+    refundMethodId: string;
+    reason: string | null;
+    notes: string | null;
+    cashShiftId: string;
+  }>(
+    `SELECT id, "sequentialNumber", state, "saleId", "clientId",
+            "refundAmount", "subtotalReturned", "taxReturned",
+            "refundMethodId", reason, notes, "cashShiftId"
+       FROM "ClientReturn"
+      ORDER BY "sequentialNumber" DESC`,
+  );
+
+  const returns: LocalClientReturn[] = [];
+  for (const row of rows) {
+    const itemRows = await queryLocal<{
+      saleItemId: string;
+      quantity: number;
+      unitPriceAtSale: string;
+      unitPriceAtReturn: string;
+      taxAmount: string;
+      totalAmount: string;
+      lotId: string | null;
+      lotQuantity: number | null;
+    }>(
+      `SELECT cri."saleItemId", cri.quantity, cri."unitPriceAtSale",
+              cri."unitPriceAtReturn", cri."taxAmount", cri."totalAmount",
+              cil."lotId", cil.quantity AS "lotQuantity"
+         FROM "ClientReturnItem" cri
+         LEFT JOIN "ClientReturnItemLot" cil ON cil."clientReturnItemId" = cri.id
+        WHERE cri."clientReturnId" = $1
+        ORDER BY cri.id, cil."lotId" NULLS FIRST`,
+      [row.id],
+    );
+
+    // Group the lot rows back onto their item, the same way the sale's items
+    // are grouped: one item can reverse stock into several lots.
+    const items = new Map<string, LocalClientReturnItem>();
+    for (const item of itemRows) {
+      let entry = items.get(item.saleItemId);
+      if (!entry) {
+        entry = {
+          saleItemId: item.saleItemId,
+          quantity: Number(item.quantity),
+          unitPriceAtSale: Number(item.unitPriceAtSale),
+          unitPriceAtReturn: Number(item.unitPriceAtReturn),
+          taxAmount: Number(item.taxAmount),
+          totalAmount: Number(item.totalAmount),
+          lots: "",
+        };
+        items.set(item.saleItemId, entry);
+      }
+      if (item.lotId) {
+        const pair = `${item.lotId}×${Number(item.lotQuantity ?? 0)}`;
+        entry.lots = entry.lots ? `${entry.lots},${pair}` : pair;
+      }
+    }
+
+    returns.push({
+      id: row.id,
+      sequentialNumber: Number(row.sequentialNumber),
+      state: row.state,
+      saleId: row.saleId,
+      clientId: row.clientId,
+      refundAmount: Number(row.refundAmount),
+      subtotalReturned: Number(row.subtotalReturned),
+      taxReturned: Number(row.taxReturned),
+      refundMethodId: row.refundMethodId,
+      reason: row.reason,
+      notes: row.notes,
+      cashShiftId: row.cashShiftId,
+      items: [...items.values()],
+    });
+  }
+  return returns;
 }
 
 // ---------------------------------------------------------------------------
@@ -614,9 +863,16 @@ export interface LocalPurchaseOrder {
   supplierId: string;
   supplierName: string;
   subtotal: number;
+  totalAmount: number;
 }
 
-/** Purchase orders the POS holds locally, newest sequential number first. */
+/**
+ * Purchase orders the POS holds locally, newest sequential number first.
+ *
+ * The money columns are read in full — a header that carries a subtotal but
+ * no total reads as an order whose total was never computed, and comparing
+ * only what somebody asserted is exactly how that survives.
+ */
 export async function fetchLocalPurchaseOrders(): Promise<
   LocalPurchaseOrder[]
 > {
@@ -627,9 +883,10 @@ export async function fetchLocalPurchaseOrders(): Promise<
     supplierId: string;
     supplierName: string;
     subtotal: string;
+    totalAmount: string;
   }>(
     `SELECT po.id, po."sequentialNumber", po.state, po."supplierId",
-            s."businessName" AS "supplierName", po.subtotal
+            s."businessName" AS "supplierName", po.subtotal, po."totalAmount"
        FROM "PurchaseOrder" po
        LEFT JOIN "Supplier" s ON s.id = po."supplierId"
       ORDER BY po."sequentialNumber" DESC`,
@@ -638,6 +895,53 @@ export async function fetchLocalPurchaseOrders(): Promise<
     ...row,
     sequentialNumber: Number(row.sequentialNumber),
     subtotal: Number(row.subtotal),
+    totalAmount: Number(row.totalAmount),
+  }));
+}
+
+export interface LocalPurchaseOrderItem {
+  productId: string;
+  commercialName: string;
+  requestedQuantity: number;
+  receivedQuantity: number;
+  pendingQuantity: number;
+  expectedUnitCost: number;
+}
+
+/**
+ * The items of a locally held purchase order.
+ *
+ * An order with no items is a header the server cannot fulfil, and the
+ * quantities are what the receiving flow spends: a `receivedQuantity` that
+ * drifted leaves the pending quantity wrong, and the pending quantity is what
+ * the cashier sees as "still to receive".
+ */
+export async function fetchLocalPurchaseOrderItems(
+  purchaseOrderId: string,
+): Promise<LocalPurchaseOrderItem[]> {
+  const rows = await queryLocal<{
+    productId: string;
+    commercialName: string | null;
+    requestedQuantity: string | number;
+    receivedQuantity: string | number;
+    pendingQuantity: string | number;
+    expectedUnitCost: string | number;
+  }>(
+    `SELECT poi."productId", p."commercialName", poi."requestedQuantity",
+            poi."receivedQuantity", poi."pendingQuantity", poi."expectedUnitCost"
+       FROM "PurchaseOrderItem" poi
+       LEFT JOIN "Product" p ON p.id = poi."productId"
+      WHERE poi."purchaseOrderId" = $1
+      ORDER BY poi.id`,
+    [purchaseOrderId],
+  );
+  return rows.map((row) => ({
+    productId: row.productId,
+    commercialName: row.commercialName ?? "",
+    requestedQuantity: Number(row.requestedQuantity),
+    receivedQuantity: Number(row.receivedQuantity),
+    pendingQuantity: Number(row.pendingQuantity),
+    expectedUnitCost: Number(row.expectedUnitCost),
   }));
 }
 
@@ -967,6 +1271,131 @@ export async function fetchLocalCreditSalePayment(
     category: row.category,
     isCash: row.isCash,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Credit payments (abonos)
+// ---------------------------------------------------------------------------
+
+export interface LocalCreditPayment {
+  id: string;
+  sequentialNumber: number;
+  clientId: string;
+  amount: number;
+  paymentMethodId: string;
+  notes: string | null;
+  annulledAt: string | null;
+  annulmentReason: string | null;
+}
+
+/**
+ * The credit payments the POS holds, newest first.
+ *
+ * An abono is money the pharmacy received against a client's debt, so this
+ * row is what the drawer is balanced against. The server keeps its own copy;
+ * when only one of them exists, the two stores disagree about the client's
+ * debt — and that debt is what every credit sale's limit check reads.
+ */
+export async function fetchLocalCreditPayments(
+  clientId?: string,
+): Promise<LocalCreditPayment[]> {
+  const rows = await queryLocal<{
+    id: string;
+    sequentialNumber: number;
+    clientId: string;
+    amount: string | number | null;
+    paymentMethodId: string;
+    notes: string | null;
+    annulledAt: Date | string | null;
+    annulmentReason: string | null;
+  }>(
+    `SELECT id, "sequentialNumber", "clientId", amount, "paymentMethodId",
+            notes, "annulledAt", "annulmentReason"
+       FROM "ClientCreditPayment"
+      WHERE $1::text IS NULL OR "clientId" = $1
+      ORDER BY "sequentialNumber" DESC`,
+    [clientId ?? null],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    sequentialNumber: Number(row.sequentialNumber),
+    clientId: row.clientId,
+    amount: Number(row.amount ?? 0),
+    paymentMethodId: row.paymentMethodId,
+    notes: row.notes,
+    annulledAt: row.annulledAt ? isoOrNull(row.annulledAt) : null,
+    annulmentReason: row.annulmentReason,
+  }));
+}
+
+/**
+ * Wait until the POS holds a credit payment of `amount` that is not annulled.
+ *
+ * The amount is the discriminator: the drawer accumulates one row per abono,
+ * and a spec that waits for "a payment" could latch onto a previous spec's.
+ */
+export async function waitForLocalCreditPayment(
+  amount: number,
+  timeoutMs = 60_000,
+): Promise<LocalCreditPayment> {
+  const deadline = Date.now() + timeoutMs;
+  let seen = "no credit payment yet";
+
+  while (Date.now() < deadline) {
+    const payments = await fetchLocalCreditPayments();
+    const found = payments.find(
+      (payment) =>
+        !payment.annulledAt && Math.abs(payment.amount - amount) < 0.005,
+    );
+    if (found) return found;
+    seen = payments.length
+      ? payments
+          .map(
+            (payment) =>
+              `${payment.id}/${payment.amount}${
+                payment.annulledAt ? "/annulled" : ""
+              }`,
+          )
+          .join(" | ")
+      : "no credit payment yet";
+    await browser.pause(1_000);
+  }
+
+  throw new Error(
+    `the POS never held a standing credit payment of ${amount} within ` +
+      `${timeoutMs}ms (last seen: ${seen})`,
+  );
+}
+
+/**
+ * Wait until the POS's copy of a credit payment is annulled.
+ *
+ * The annulment is local-first: the row is flipped here and the reversal is
+ * queued for the server, so the two stores reach the annulled state at
+ * different moments.
+ */
+export async function waitForLocalAnnulledCreditPayment(
+  id: string,
+  timeoutMs = 60_000,
+): Promise<LocalCreditPayment> {
+  const deadline = Date.now() + timeoutMs;
+  let seen = "no credit payment yet";
+
+  while (Date.now() < deadline) {
+    const found = (await fetchLocalCreditPayments()).find(
+      (payment) => payment.id === id,
+    );
+    if (found?.annulledAt) return found;
+    seen = found
+      ? `payment ${id} is not annulled yet`
+      : `no credit payment with id ${id}`;
+    await browser.pause(1_000);
+  }
+
+  throw new Error(
+    `the credit payment ${id} was never annulled locally within ${timeoutMs}ms ` +
+      `(last seen: ${seen})`,
+  );
 }
 
 // ---------------------------------------------------------------------------

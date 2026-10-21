@@ -72,6 +72,7 @@ import {
   fetchLocalSuppliers,
   fetchLocalLots,
   fetchLocalPurchaseOrders,
+  fetchLocalPurchaseOrderItems,
   fetchLocalPurchaseReceptions,
   fetchLocalPurchaseReception,
   fetchLocalTaxSchemes,
@@ -411,6 +412,84 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
       RECEIVED_UNIT_COST,
       "server order unit cost",
     );
+
+    // ---- Full-width reconciliation of the order, header and items.
+    //
+    // The assertions above name the fields somebody thought to look at. This
+    // one diffs the union of BOTH sides' field names, so a money column the
+    // replay dropped — or computed differently — becomes a finding instead of
+    // staying invisible.
+    const localOrderAfter = (await fetchLocalPurchaseOrders()).find(
+      (o) => o.id === localOrderId,
+    );
+    expect(localOrderAfter).toBeDefined();
+
+    assertNoDefects(
+      reconcileRow(
+        `PurchaseOrder ${localOrderId}`,
+        {
+          sequentialNumber: localOrderAfter?.sequentialNumber,
+          state: localOrderAfter?.state,
+          supplierName: localOrderAfter?.supplierName,
+          subtotal: localOrderAfter?.subtotal,
+          totalAmount: localOrderAfter?.totalAmount,
+        },
+        {
+          sequentialNumber: serverOrder.sequentialNumber,
+          state: serverOrder.state,
+          supplierName: serverOrder.supplierName,
+          subtotal: serverOrder.subtotal,
+          totalAmount: serverOrder.totalAmount,
+        },
+        {
+          sequentialNumber: { kind: "number" },
+          state: { kind: "text" },
+          supplierName: { kind: "text" },
+          subtotal: { kind: "money" },
+          totalAmount: { kind: "money" },
+        },
+      ),
+      "purchase order P02",
+    );
+
+    // And the items the order was made of: what was asked for, what came in,
+    // and what the unit was expected to cost.
+    const localItems = await fetchLocalPurchaseOrderItems(localOrderId);
+    expect(localItems).toHaveLength(serverOrder.items.length);
+    for (const [index, serverItem] of serverOrder.items.entries()) {
+      const localItem = localItems[index];
+      expect(localItem).toBeDefined();
+      assertNoDefects(
+        reconcileRow(
+          `PurchaseOrderItem ${localOrderId}[${index}]`,
+          {
+            productId: localItem?.productId,
+            commercialName: localItem?.commercialName,
+            requestedQuantity: localItem?.requestedQuantity,
+            receivedQuantity: localItem?.receivedQuantity,
+            pendingQuantity: localItem?.pendingQuantity,
+            expectedUnitCost: localItem?.expectedUnitCost,
+          },
+          {
+            productId: serverItem.productId,
+            commercialName: serverItem.commercialName,
+            requestedQuantity: serverItem.requestedQuantity,
+            receivedQuantity: serverItem.receivedQuantity,
+            pendingQuantity: serverItem.pendingQuantity,
+            expectedUnitCost: serverItem.expectedUnitCost,
+          },
+          {
+            productId: { kind: "text" },
+            commercialName: { kind: "text" },
+            requestedQuantity: { kind: "number" },
+            receivedQuantity: { kind: "number" },
+            pendingQuantity: { kind: "number" },
+            expectedUnitCost: { kind: "money" },
+          },
+        ),
+        "purchase order items P02",
+      );
+    }
   });
 
   it("E2E-P03: receiving against the order creates a server lot with the typed batch and expiry", async () => {

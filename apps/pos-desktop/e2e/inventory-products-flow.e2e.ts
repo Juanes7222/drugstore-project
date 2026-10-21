@@ -48,6 +48,7 @@ import {
   fetchLocalProduct,
   fetchLocalProductPrice,
   queryLocal,
+  waitForLocalSyncStatus,
 } from "./local-state";
 import {
   waitForServerProduct,
@@ -234,6 +235,18 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
     const queue = await waitForTerminalSyncOperation("PRODUCT_CREATION");
     expect(queue.status).toBe("COMPLETED");
 
+    // ---- The POS's own outbox.
+    //
+    // The server's queue row says the operation was applied; this one says the
+    // DEVICE is no longer waiting for it. Both claims are worth making: an
+    // operation the server applied while the device still shows it pending is
+    // a till that would push it again.
+    const outbox = await waitForLocalSyncStatus(
+      "PRODUCT_CREATION",
+      "COMPLETED",
+    );
+    expect(outbox.payload).toContain(NEW_PRODUCT_NAME);
+
     // ---- Full-width local-versus-server reconciliation of the product row.
     // Hand-picking the fields above is how a dropped commission column or a
     // storage diff lives forever uncaught: the reconcile compares EVERYTHING
@@ -328,7 +341,6 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
     // whole-row update would have shown up as a reset here.
     expect(localAfter?.currentPrice).toBe(created.currentPrice);
     expect(localAfter?.currentCost).toBe(created.currentCost);
-    expect(localAfter?.internalCode).toBe(created.internalCode);
 
     // ---- Server: the sync entry dispatched and the server row carries the
     // same edit. PRODUCT_UPDATE does not change `reportedBy` anything about
@@ -344,6 +356,18 @@ describe("Inventory products (real Tauri app against the real backend)", () => {
     expect(server.currentPrice).toBe(created.currentPrice);
     expect(server.currentCost).toBe(created.currentCost);
     expect(server.commissionType).toBe(created.commissionType);
+
+    // The internal code names the SAME product on both sides, but the POS
+    // mints its own `OFFLINE-` name and the catalog pull later brings the
+    // server's `P…` name down — so which one the local row carries depends on
+    // whether the pull has landed, and demanding the earlier one is a race
+    // against the sync (the same reason the code above accepts both forms).
+    //
+    // What must NOT happen is a THIRD name: an edit that invented a code
+    // would show up here.
+    expect([created.internalCode, server.internalCode]).toContain(
+      localAfter?.internalCode,
+    );
   });
 
   it("E2E-I03: changing the sale price writes a new history row and repaths currentPriceId on both stores", async () => {

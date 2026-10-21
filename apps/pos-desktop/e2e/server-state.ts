@@ -465,13 +465,31 @@ export async function waitForNewServerSale(
 // Client returns
 // ---------------------------------------------------------------------------
 
+export interface ServerClientReturnItem {
+  saleItemId: string;
+  quantity: number;
+  unitPriceAtSale: number;
+  unitPriceAtReturn: number;
+  taxAmount: number;
+  totalAmount: number;
+}
+
 export interface ServerClientReturn {
   id: string;
   sequentialNumber: number;
   state: string;
+  saleId: string;
+  clientId: string;
   refundAmount: number;
+  subtotalReturned: number;
+  taxReturned: number;
+  refundMethodId: string;
+  reason: string | null;
+  notes: string | null;
+  cashShiftId: string;
   creditNoteFullNumber: string | null;
   lotQuantities: Array<{ lotId: string; quantity: number }>;
+  items: ServerClientReturnItem[];
 }
 
 /**
@@ -488,10 +506,20 @@ export async function fetchServerClientReturns(): Promise<
     id: string;
     sequentialNumber: number;
     state: string;
+    saleId: string;
+    clientId: string;
     refundAmount: string;
+    subtotalReturned: string;
+    taxReturned: string;
+    refundMethodId: string;
+    reason: string | null;
+    notes: string | null;
+    cashShiftId: string;
     creditNoteFullNumber: string | null;
   }>(
-    `SELECT cr.id, cr."sequentialNumber", cr.state, cr."refundAmount",
+    `SELECT cr.id, cr."sequentialNumber", cr.state, cr."saleId", cr."clientId",
+            cr."refundAmount", cr."subtotalReturned", cr."taxReturned",
+            cr."refundMethodId", cr.reason, cr.notes, cr."cashShiftId",
             fd."fullNumber" AS "creditNoteFullNumber"
        FROM "ClientReturn" cr
        LEFT JOIN "FiscalDocument" fd ON fd.id = cr."creditNoteId"
@@ -509,15 +537,51 @@ export async function fetchServerClientReturns(): Promise<
         WHERE cri."clientReturnId" = $1`,
       [row.id],
     );
+    // The items carry the money split the cashier was promised: the price the
+    // sale was made at, the price the refund is computed from, and the tax
+    // taken out. A refund whose total does not add up is a cashier who
+    // promised a number the books do not carry.
+    const items = await query<{
+      saleItemId: string;
+      quantity: number;
+      unitPriceAtSale: string;
+      unitPriceAtReturn: string;
+      taxAmount: string;
+      totalAmount: string;
+    }>(
+      `SELECT "saleItemId", quantity, "unitPriceAtSale",
+              "unitPriceAtReturn", "taxAmount", "totalAmount"
+         FROM "ClientReturnItem"
+        WHERE "clientReturnId" = $1
+        ORDER BY id`,
+      [row.id],
+    );
+
     returns.push({
       id: row.id,
       sequentialNumber: row.sequentialNumber,
       state: row.state,
+      saleId: row.saleId,
+      clientId: row.clientId,
       refundAmount: Number(row.refundAmount),
+      subtotalReturned: Number(row.subtotalReturned),
+      taxReturned: Number(row.taxReturned),
+      refundMethodId: row.refundMethodId,
+      reason: row.reason,
+      notes: row.notes,
+      cashShiftId: row.cashShiftId,
       creditNoteFullNumber: row.creditNoteFullNumber,
       lotQuantities: lots.map((lot) => ({
         lotId: lot.lotId,
         quantity: Number(lot.quantity),
+      })),
+      items: items.map((item) => ({
+        saleItemId: item.saleItemId,
+        quantity: Number(item.quantity),
+        unitPriceAtSale: Number(item.unitPriceAtSale),
+        unitPriceAtReturn: Number(item.unitPriceAtReturn),
+        taxAmount: Number(item.taxAmount),
+        totalAmount: Number(item.totalAmount),
       })),
     });
   }
@@ -1020,6 +1084,34 @@ export async function fetchServerClients(): Promise<ServerClient[]> {
 }
 
 /**
+ * One client the server holds, at full width.
+ *
+ * The wide reader above answers "does the server know this client"; this one
+ * answers "does the server's row agree with the POS's row, field by field".
+ * The client the POS sells to is the one the drawer is balanced against, and a
+ * credit limit or a consent flag that silently differs between the two stores
+ * is a debt the books and the till disagree about.
+ */
+export async function fetchServerClient(
+  identificationNumber: string,
+): Promise<Record<string, unknown> | null> {
+  const rows = await query<Record<string, unknown>>(
+    `SELECT c."identificationType", c."identificationNumber", c."fullName",
+            c.email, c.phone, c.address, c.municipality, c.department,
+            c."isActive", c."creditLimit", c."consentGivenAt",
+            c."consentVersion", c."dataSubjectRequestStatus",
+            c."classificationId",
+            cl.type AS "classificationType",
+            cl."discountPercentage" AS "classificationDiscountPercentage"
+       FROM "Client" c
+       LEFT JOIN "ClientClassification" cl ON cl.id = c."classificationId"
+      WHERE c."identificationNumber" = $1`,
+    [identificationNumber],
+  );
+  return rows[0] ?? null;
+}
+
+/**
  * Wait until the server holds a client with `identificationNumber`.
  *
  * The POS creates the client locally and pushes CLIENT_CREATION, so the row
@@ -1129,6 +1221,128 @@ export async function fetchServerCreditState(
     debt: Math.max(0, debt),
     creditPaymentCount: num(row.creditPaymentCount),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Credit payments (abonos)
+// ---------------------------------------------------------------------------
+
+export interface ServerCreditPayment {
+  id: string;
+  sequentialNumber: number;
+  clientId: string;
+  amount: number;
+  paymentMethodId: string;
+  notes: string | null;
+  annulledAt: string | null;
+  annulmentReason: string | null;
+}
+
+/**
+ * The credit payments the server holds, newest first.
+ *
+ * Optionally narrowed to one client. The server's row is the far copy of the
+ * money the pharmacy received; the POS's own `ClientCreditPayment` row is the
+ * one the drawer is balanced against. A payment that reached one store and not
+ * the other leaves the two with different debts, and the debt is what every
+ * credit sale's limit check reads.
+ */
+export async function fetchServerCreditPayments(
+  clientId?: string,
+): Promise<ServerCreditPayment[]> {
+  const rows = await query<{
+    id: string;
+    sequentialNumber: number;
+    clientId: string;
+    amount: string;
+    paymentMethodId: string;
+    notes: string | null;
+    annulledAt: Date | null;
+    annulmentReason: string | null;
+  }>(
+    `SELECT id, "sequentialNumber", "clientId", amount, "paymentMethodId",
+            notes, "annulledAt", "annulmentReason"
+       FROM "ClientCreditPayment"
+      WHERE $1::text IS NULL OR "clientId" = $1
+      ORDER BY "sequentialNumber" DESC`,
+    [clientId ?? null],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    sequentialNumber: Number(row.sequentialNumber),
+    clientId: row.clientId,
+    amount: Number(row.amount),
+    paymentMethodId: row.paymentMethodId,
+    notes: row.notes,
+    annulledAt: row.annulledAt ? row.annulledAt.toISOString() : null,
+    annulmentReason: row.annulmentReason,
+  }));
+}
+
+/**
+ * Wait until the server holds a credit payment with `id` for `amount`.
+ *
+ * `CLIENT_CREDIT_PAYMENT` is not in the batch endpoint's immediate-dispatch
+ * set, so the replay lands through the 30-second cron — the wait is for the
+ * replay, not for the push.
+ */
+export async function waitForServerCreditPayment(
+  id: string,
+  amount: number,
+  timeoutMs = 120_000,
+): Promise<ServerCreditPayment> {
+  const deadline = Date.now() + timeoutMs;
+  let seen = "no credit payment yet";
+
+  while (Date.now() < deadline) {
+    const found = (await fetchServerCreditPayments()).find(
+      (payment) => payment.id === id,
+    );
+    if (found) {
+      if (Math.abs(found.amount - amount) < 0.005) return found;
+      seen = `payment ${id} has amount ${found.amount}, expected ${amount}`;
+    } else {
+      seen = `no credit payment with id ${id}`;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `the credit payment ${id} never reached the server within ${timeoutMs}ms ` +
+      `(last seen: ${seen}). Sync queue: ${await describeSyncQueue()}`,
+  );
+}
+
+/**
+ * Wait until the server's copy of a credit payment is annulled.
+ *
+ * The annulment is replayed as its own operation, so the two stores reach the
+ * annulled state at different moments; the wait is for the server's, because
+ * that is the copy the other workstations read.
+ */
+export async function waitForServerAnnulledCreditPayment(
+  id: string,
+  timeoutMs = 120_000,
+): Promise<ServerCreditPayment> {
+  const deadline = Date.now() + timeoutMs;
+  let seen = "no credit payment yet";
+
+  while (Date.now() < deadline) {
+    const found = (await fetchServerCreditPayments()).find(
+      (payment) => payment.id === id,
+    );
+    if (found?.annulledAt) return found;
+    seen = found
+      ? `payment ${id} is not annulled yet`
+      : `no credit payment with id ${id}`;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `the credit payment ${id} was never annulled on the server within ` +
+      `${timeoutMs}ms (last seen: ${seen}). ` +
+      `Sync queue: ${await describeSyncQueue()}`,
+  );
 }
 
 /**

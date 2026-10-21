@@ -52,7 +52,11 @@ import {
   waitForServerAdjustment,
   fetchServerLotStocksByBatch,
 } from "./server-state";
-import { fetchLocalAdjustments, fetchLocalLots } from "./local-state";
+import {
+  fetchLocalAdjustments,
+  fetchLocalLots,
+  waitForLocalSyncStatus,
+} from "./local-state";
 
 // `describe` / `it` / `beforeEach` are Mocha globals injected by the WDIO runner.
 /* global describe, it, beforeEach */
@@ -282,6 +286,18 @@ describe("Inventory adjustments (real Tauri app against the real backend)", () =
     const serverStocksAfter =
       await fetchServerLotStocksByBatch(PRODUCT_IBUPROFENO);
     expect(serverStocksAfter[BATCH]).toBe(serverBefore + 7);
+
+    // ---- The POS's own outbox.
+    //
+    // The server's queue row says the adjustment was applied; this one says
+    // the DEVICE is no longer waiting for it. An adjustment the server applied
+    // while the device still shows it pending is a count that would be applied
+    // twice.
+    const outbox = await waitForLocalSyncStatus(
+      "INVENTORY_ADJUSTMENT",
+      "COMPLETED",
+    );
+    expect(outbox.lastErrorMessage).toBeNull();
   });
 
   it("E2E-A02: a decrease drains the lot to zero and both stores mark it EXHAUSTED", async () => {
@@ -468,13 +484,12 @@ describe("Inventory adjustments (real Tauri app against the real backend)", () =
     // file have already created APPLIED documents. The count is compared
     // against what it was, not against zero — a fixed zero would fail for the
     // previous specs' legitimate work rather than for anything this one did.
-    const appliedBefore = (
-      await fetchLocalAdjustments()
-    ).filter((d) => d.state === "APPLIED").length;
+    const appliedBefore = (await fetchLocalAdjustments()).filter(
+      (d) => d.state === "APPLIED",
+    ).length;
 
     // The inventory hub is simply not in a CASHIER's rail.
-    const productosEntry =
-      'button[role="menuitem"][aria-label="Productos"]';
+    const productosEntry = 'button[role="menuitem"][aria-label="Productos"]';
     expect(await isVisible(productosEntry)).toBe(false);
 
     // And the screen it leads to is not reachable: the lot picker never
