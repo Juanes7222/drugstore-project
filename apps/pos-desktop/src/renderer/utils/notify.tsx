@@ -25,6 +25,37 @@
  */
 import { sileo } from "sileo";
 import type { SileoState } from "sileo";
+import {
+  AlertCircleIcon,
+  AlertTriangleIcon,
+  CheckCircleIcon,
+  InfoIcon,
+} from "@/components/ui/icons";
+
+// ---------------------------------------------------------------------------
+// Default semantic icons per state (house style: 18px, strokeWidth 1.75).
+// The icon inherits the state color from sileo's badge via currentColor.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_ICON: Record<
+  Exclude<SileoState, "loading" | "action">,
+  React.ReactElement
+> = {
+  success: <CheckCircleIcon size={18} strokeWidth={1.75} aria-hidden="true" />,
+  error: <AlertCircleIcon size={18} strokeWidth={1.75} aria-hidden="true" />,
+  warning: (
+    <AlertTriangleIcon size={18} strokeWidth={1.75} aria-hidden="true" />
+  ),
+  info: <InfoIcon size={18} strokeWidth={1.75} aria-hidden="true" />,
+};
+
+/** Resolve the icon for a state: explicit override, null opt-out, or default. */
+function resolveIcon(
+  explicit: React.ReactNode | null | undefined,
+  type: Exclude<SileoState, "loading" | "action">,
+): React.ReactNode | null | undefined {
+  return explicit === undefined ? DEFAULT_ICON[type] : explicit;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,7 +120,7 @@ export const notify = {
     return sileo.success({
       title: options.title,
       description: options.description,
-      icon: options.icon,
+      icon: resolveIcon(options.icon, "success"),
       duration: resolveDuration(options.duration, "success"),
     });
   },
@@ -102,7 +133,7 @@ export const notify = {
     return sileo.error({
       title: options.title,
       description: options.description,
-      icon: options.icon,
+      icon: resolveIcon(options.icon, "error"),
       duration: resolveDuration(options.duration, "error"),
     });
   },
@@ -115,7 +146,7 @@ export const notify = {
     return sileo.warning({
       title: options.title,
       description: options.description,
-      icon: options.icon,
+      icon: resolveIcon(options.icon, "warning"),
       duration: resolveDuration(options.duration, "warning"),
     });
   },
@@ -128,7 +159,7 @@ export const notify = {
     return sileo.info({
       title: options.title,
       description: options.description,
-      icon: options.icon,
+      icon: resolveIcon(options.icon, "info"),
       duration: resolveDuration(options.duration, "info"),
     });
   },

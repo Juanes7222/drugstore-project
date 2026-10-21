@@ -1032,3 +1032,52 @@
     background-color: color-mix(in srgb, var(--color-ink) 35%, transparent);
   }
 
+/* ==================== Toast system re-skin (sileo) ====================
+   The <Toaster /> (App.tsx) renders sileo's physics pill at top-center.
+   Re-skinned onto the design tokens: palette state colors, pos-panel
+   surface with system border + elevated shadow, app type scale. The
+   library defaults (oklch Tailwind hues, capitalize, translucent
+   description) are neutralized so the toast speaks the app's language. */
+
+:root {
+  --sileo-state-success: var(--color-pharma);
+  --sileo-state-error: var(--color-error);
+  --sileo-state-warning: var(--color-urgency);
+  --sileo-state-info: var(--color-sync);
+  --sileo-state-action: #5B3E96; /* Restrict Violet */
+  --sileo-width: 380px;
+  --sileo-height: 48px;
+}
+
+/* Title: app type scale, no title-case mangling of Spanish copy */
+[data-sileo-toast] [data-sileo-title] {
+  text-transform: none;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+/* Description: muted ink at caption size (no theme attr -> no translucent
+   white from the library's light theme) */
+[data-sileo-toast] [data-sileo-description] {
+  font-size: var(--text-caption);
+  color: var(--color-ink-muted);
+}
+
+/* Pill surface: system border + elevated shadow so it reads above panels
+   (the pill is drawn as an SVG shape on the sileo canvas) */
+[data-sileo-svg] path,
+[data-sileo-svg] rect {
+  stroke: color-mix(in srgb, var(--color-ink) 12%, transparent);
+  stroke-width: 1;
+}
+
+[data-sileo-svg] {
+  filter: drop-shadow(0 6px 20px color-mix(in srgb, var(--color-ink) 16%, transparent));
+}
+
+/* Button inside the pill: pos-button feel */
+[data-sileo-toast] [data-sileo-button] {
+  border-radius: 9999px;
+  font-weight: 600;
+}
+

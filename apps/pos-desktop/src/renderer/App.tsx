@@ -1074,9 +1074,10 @@ export const App: FC = () => {
       <ErrorBoundary>
         <InnerApp />
       </ErrorBoundary>
-      <Toaster position="bottom-right" />
+      {/* Toast system (sileo) — top-center so the pill is never hidden
+          behind the sales cart (right 40%) or the product search (left 60%);
+          offset clears the app header. CSS re-skin in global.css. */}
+      <Toaster position="top-center" offset={{ top: "84px" }} />
     </ServiceProvider>
   );
 };
-
-
