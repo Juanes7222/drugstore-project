@@ -289,6 +289,13 @@ ajustar el assert**. Bugs encontrados y corregidos:
    `WHERE $1::text IS NULL OR "operationType" = $1` fija el parámetro a texto
    y Postgres rechaza `enum = text`. No se notó porque el helper no lo usaba
    nadie: era código muerto. Lo encontró el test que lo puso a trabajar.
+9. **Una negativa del servidor se clasificaba como regla de negocio.** El
+   rechazo por operación llega con status 412 (el status del lote no dice nada
+   de la operación individual), y esa rama de `classifyFailure` no miraba la
+   palabra "validation": un payload que el esquema del servidor rechazaba
+   quedaba registrado como `BUSINESS_RULE`. En la pantalla de salud de
+   sincronización los dos casos se ven igual, y no lo son: uno es un error de
+   captura y el otro una regla del negocio. Lo encontró `server-rejection-flow`.
 
 Al añadir un test, verifica también si el **mock** de un unit test existente
 sigue siendo válido: si tu fix cambia la llamada que el código hace, el mock es
@@ -305,14 +312,14 @@ cubrir; esto es lo que más valor da):
 | # | Flujo | Nota |
 |---|---|---|
 | ✅ | **Turno de caja**: apertura, arqueo, cierre | `cash-shift-flow` (SH01–SH02): el turno que abre la app llega al servidor con el MISMO id y la venta queda colgada de él; el cierre desde la UI cierra el turno del servidor con el efectivo contado |
+| ✅ | **Crédito de cliente**: pago y anulación | `credit-payment-flow` (CP01–CP02): el abono se escribe en local, se replayea al servidor (`CLIENT_CREDIT_PAYMENT`), y la DEUDA baja exactamente lo mismo en las dos bases; la anulación (`CLIENT_CREDIT_PAYMENT_ANNULMENT`) devuelve la deuda a su valor previo en ambas |
+| ✅ | **Negativa del servidor** | `server-rejection-flow` (N01): cuando el SERVIDOR rechaza lo que el POS aceptó (el formulario admite más códigos de barras de los que el esquema del servidor acepta), la cola local queda `PERMANENT_FAILURE`, con la categoría `VALIDATION` y el motivo DEL SERVIDOR, y el servidor NO crea el producto |
 | 1 | **Compras**: devolución a proveedor | El replay de devolución a proveedor tuvo un bug de stock (§9, similar al #7); orden y recepción ya están cubiertos (`purchases-flow`) |
-| 2 | **Crédito de cliente**: pago y anulación | `CLIENT_CREDIT_PAYMENT` / `_ANNULMENT` ya están en el dispatcher, sin cobertura E2E (la venta a crédito sí está cubierta) |
-| 3 | **Inventario**: FEFO y venta que consume varios lotes | El ajuste por conteo está cubierto (`inventory-adjustments-flow`) |
-| 4 | **Perfil del cliente**: consentimiento y venta a cliente desactivado | Crear/editar/desactivar ya están cubiertos (`clients-flow`) |
-| 5 | **Negativa del servidor**: stock insuficiente, cliente inactivo, barcode duplicado en el servidor | Hoy las negativas son locales (§8): ninguna comprueba que el SERVIDOR rechace y que la cola local quede `PERMANENT_FAILURE` |
-| 6 | **Farmacia**: recetas y controlados | |
-| 7 | **Impresión**: recibo y nota crédito | El `PrintRouter` no está conectado al WebView todavía |
-| 8 | **Caída de red**: cortar y reconectar a mitad de venta | El motor de reintentos merece E2E |
+| 2 | **Inventario**: FEFO y venta que consume varios lotes | El ajuste por conteo está cubierto (`inventory-adjustments-flow`) |
+| 3 | **Perfil del cliente**: consentimiento y venta a cliente desactivado | Crear/editar/desactivar ya están cubiertos (`clients-flow`), y la fila local ahora se reconcilia campo a campo con la del servidor |
+| 4 | **Farmacia**: recetas y controlados | La venta de un producto controlado se rechaza en local (`PrescriptionRequiredNotSupportedException`), así que la vertical de recetas es inalcanzable |
+| 5 | **Impresión**: recibo y nota crédito | El `PrintRouter` no está conectado al WebView todavía |
+| 6 | **Caída de red**: cortar y reconectar a mitad de venta | El motor de reintentos merece E2E |
 
 Al añadir un flujo nuevo, el checklist es:
 
@@ -349,7 +356,9 @@ y solo aparece en la segunda corrida.
 | `e2e/sales-pricing-flow.e2e.ts` | S07–S11 (descuentos, override de precio, cantidades) |
 | `e2e/sales-config-flow.e2e.ts` | SC01–SC04 (configuración de ventas global) |
 | `e2e/sales-credit-flow.e2e.ts` | CR01–CR03 (venta a crédito) |
-| `e2e/returns-flow.e2e.ts` | R01–R02 (incluye el camino cross-workstation) |
+| `e2e/credit-payment-flow.e2e.ts` | CP01–CP02 (abono y su anulación; la deuda se reconcilia en las dos bases) |
+| `e2e/server-rejection-flow.e2e.ts` | N01 (el servidor rechaza lo que el POS aceptó: la cola local queda `PERMANENT_FAILURE` con el motivo del servidor) |
+| `e2e/returns-flow.e2e.ts` | R01–R02 (incluye el camino cross-workstation; R01 reconcilia la devolución local ↔ servidor) |
 | `e2e/purchases-flow.e2e.ts` | P01–P06 (orden, recepción, costo, precio) |
 | `e2e/inventory-products-flow.e2e.ts` | I01–I04 (alta, edición, precio, barcode duplicado) |
 | `e2e/inventory-adjustments-flow.e2e.ts` | A01–A05 (ajuste por conteo, aislamiento, permisos) |
@@ -386,3 +395,10 @@ después.
 - **Windows-only.** `tauri-driver` directo necesita Edge WebDriver, que existe
   en Windows y Linux pero no en macOS. Para macOS el camino es el service con su
   servidor embebido.
+- **El formulario de producto no impone el límite de códigos de barras del
+  servidor.** El esquema del servidor acepta hasta 20 y el formulario local no
+  tiene tope: un producto con 21 se guarda en el espejo del POS y se rechaza
+  al llegar al servidor. `server-rejection-flow` (N01) deja el caso
+  documentado a propósito —no se corrigió el formulario, para que la spec
+  siga siendo alcanzable—; cuando el formulario imponga el mismo límite,
+  esa spec tendrá que afirmar la negativa LOCAL en vez de la del servidor.

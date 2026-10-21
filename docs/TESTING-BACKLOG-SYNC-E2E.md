@@ -67,7 +67,7 @@ covered through the relay:
 |---|---|
 | `PURCHASE_RECEPTION_CONFIRMATION` | Stock entering the store once |
 | `SUPPLIER_RETURN_CONFIRMATION` | Stock leaving the store once (the bug the backlog already recorded) |
-| `CLIENT_CREDIT_PAYMENT` / `_ANNULMENT` | A receivable created and cancelled once, balance exact |
+| `CLIENT_CREDIT_PAYMENT` / `_ANNULMENT` | A receivable created and cancelled once, balance exact — ✅ covered end to end by the real-app suite (`credit-payment-flow` CP01–CP02): the abono and its annulment are replayed, and the debt falls and is restored by the exact amount in BOTH stores |
 | `CLIENT_CREATION` / `UPDATE` / `DEACTIVATE` | The client row exists once (the server maps the id) |
 
 One gap outside the operation types:
@@ -237,6 +237,13 @@ inside `pos-other-operations` is exercised.
   → final balance consistent (double-entry style invariant).
 - Degraded client (clientId null at replay time, see bug #6) followed by
   credit sale → credit is attached to the patched client, not lost.
+
+Covered end to end by the real-app suite (`apps/pos-desktop/e2e`):
+`credit-payment-flow` CP01 records an abono and CP02 annuls it, both through
+the client dialog, and both assert the DEBT on the POS's own database and on
+the server — recomputed independently in SQL on each side, because the debt
+formula has three implementations in this codebase and has already drifted
+once.
 
 ### 2.4 Operation types still without a full POS→server→DB flow  🟠 MEDIUM — ✅ DONE
 
