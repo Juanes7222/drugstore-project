@@ -6,6 +6,7 @@
  * or any domain module — so that globalThis stubs (Buffer, process, etc.)
  * are in place before the Prisma runtime or PGlite initialise.
  */
+import "./dev/shared-array-buffer-polyfill";
 import "./dev/buffer-polyfill";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
