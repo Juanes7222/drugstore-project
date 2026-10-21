@@ -11,10 +11,7 @@ import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 import { uiSlice } from "@/store/slices/ui-slice";
 import { Home } from "./home";
-import {
-  useLocalSessionStore,
-  type LocalSession,
-} from "../../../domain/auth";
+import { useLocalSessionStore, type LocalSession } from "../../../domain/auth";
 import { useLicenseStore } from "../../../domain/licensing/license.store";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
 
@@ -44,16 +41,47 @@ beforeEach(() => {
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Mock the local database so the Home stats counts resolve deterministically
-// without PGlite initialisation in jsdom.
+// Mock the local database so the dashboard aggregates resolve
+// deterministically without PGlite initialisation in jsdom. The hook fires
+// one Promise.all over every model it reads; each is stubbed here.
+const { dbCount, saleAggregate, cashShiftFindFirst } = vi.hoisted(() => ({
+  dbCount: vi.fn().mockResolvedValue(0),
+  saleAggregate: vi.fn().mockResolvedValue({ _sum: { totalAmount: null } }),
+  cashShiftFindFirst: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("../../../infrastructure/local-database", () => ({
   getLocalDatabase: vi.fn().mockResolvedValue({
     prisma: {
-      sale: { count: vi.fn().mockResolvedValue(0) },
+      sale: { count: vi.fn().mockResolvedValue(0), aggregate: saleAggregate },
       user: { count: vi.fn().mockResolvedValue(0) },
+      cashShift: {
+        count: vi.fn().mockResolvedValue(0),
+        findFirst: cashShiftFindFirst,
+      },
+      lot: { count: dbCount },
+      inventoryAdjustmentDocument: { count: dbCount },
+      localAuditLog: { count: dbCount },
     },
   }),
 }));
+
+// Home derives its sync tile from useLocalSync — mock at the hook boundary
+// so the Zustand store and its polling intervals never start in jsdom.
+const mockUseLocalSync = vi.hoisted(() => vi.fn());
+vi.mock("@/hooks/use-local-sync", () => ({
+  useLocalSync: mockUseLocalSync,
+}));
+mockUseLocalSync.mockReturnValue({
+  status: "CONNECTED",
+  pendingPushCount: 0,
+  pendingPullCount: 0,
+  isConnected: true,
+  isReconnecting: false,
+  isDisconnected: false,
+  isThisWorkstationHub: false,
+  hasPendingOps: false,
+});
 
 // Control online status independently of navigator.onLine so tests are
 // deterministic and don't depend on the test runner's connectivity.
@@ -114,7 +142,7 @@ const baseSession: LocalSession = {
   avatarUrl: null,
   avatarColor: null,
   mustChangePassword: false,
-  sessionTrust: 'SERVER_VERIFIED',
+  sessionTrust: "SERVER_VERIFIED",
 };
 
 const setSessionRole = (role: string): void => {
@@ -219,9 +247,7 @@ describe("Home", () => {
       renderHome();
 
       // i18n: "home.welcome" = "Hola, {{name}}"
-      expect(
-        screen.getByText("Hola, María"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Hola, María")).toBeInTheDocument();
     });
 
     it("uses fullName when displayName is empty", () => {
@@ -232,176 +258,149 @@ describe("Home", () => {
 
       renderHome();
 
-      expect(
-        screen.getByText("Hola, María Pérez"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Hola, María Pérez")).toBeInTheDocument();
     });
 
     it("shows role badge matching session.role", () => {
       renderHome();
 
       // "roles.cashier" → "Cajero"
-      expect(
-        screen.getByText("Cajero"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Cajero")).toBeInTheDocument();
     });
 
     it("shows correct subtitle for CASHIER role", () => {
       renderHome();
 
       // "home.subtitle_cashier" → "Listo para atender"
-      expect(
-        screen.getByText("Listo para atender"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Listo para atender")).toBeInTheDocument();
     });
 
     it("renders main landmark with accessible label", () => {
       renderHome();
 
-      expect(
-        screen.getByRole("main", { name: /inicio/i }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("main", { name: /inicio/i })).toBeInTheDocument();
     });
   });
 
   // ── CASHIER section ─────────────────────────────────────────────
 
   describe("CASHIER role", () => {
-    it("shows cashier-specific stats section", () => {
+    it("shows the cashier bento tiles", () => {
       renderHome();
 
-      // Cashier section contains "Resumen del día" StatsCard
-      expect(
-        screen.getByText("Resumen del día"),
-      ).toBeInTheDocument();
-      // "Turno activo" StatsCard
-      expect(
-        screen.getByText("Turno activo"),
-      ).toBeInTheDocument();
-      // Sync status StatsCard
-      expect(
-        screen.getByText("Sincronización"),
-      ).toBeInTheDocument();
+      // Hero tile (today's summary) + shift + sync tiles
+      expect(screen.getByText("Resumen del día")).toBeInTheDocument();
+      expect(screen.getByText("Turno activo")).toBeInTheDocument();
+      expect(screen.getByText("Sincronización")).toBeInTheDocument();
     });
 
-    it("shows new-sale button in cashier section", () => {
+    it("shows the hero revenue tile with the aggregated amount", async () => {
+      vi.mocked(getLocalDatabase).mockResolvedValueOnce({
+        prisma: {
+          sale: {
+            count: vi.fn().mockResolvedValue(7),
+            aggregate: vi.fn().mockResolvedValue({
+              _sum: { totalAmount: "850000" },
+            }),
+          },
+          user: { count: vi.fn().mockResolvedValue(0) },
+          cashShift: {
+            count: vi.fn().mockResolvedValue(1),
+            findFirst: cashShiftFindFirst,
+          },
+          lot: { count: dbCount },
+          inventoryAdjustmentDocument: { count: dbCount },
+          localAuditLog: { count: dbCount },
+        },
+      } as unknown as Awaited<ReturnType<typeof getLocalDatabase>>);
       renderHome();
 
-      // Two buttons match "Nueva venta": one in QuickActionsCard, one in
-      // the cashier-specific section. Both should be present for CASHIER.
+      // Hero shows the peso-formatted sum and the count detail.
+      expect(await screen.findByText("$850.000")).toBeInTheDocument();
+      expect(await screen.findByText("7 transacciones")).toBeInTheDocument();
+    });
+
+    it("shows the open shift's start time in the shift tile", async () => {
+      vi.mocked(getLocalDatabase).mockResolvedValueOnce({
+        prisma: {
+          sale: {
+            count: vi.fn().mockResolvedValue(0),
+            aggregate: saleAggregate,
+          },
+          user: { count: vi.fn().mockResolvedValue(0) },
+          cashShift: {
+            count: vi.fn().mockResolvedValue(1),
+            findFirst: vi.fn().mockResolvedValue({
+              openedAt: new Date("2026-10-20T08:30:00"),
+            }),
+          },
+          lot: { count: dbCount },
+          inventoryAdjustmentDocument: { count: dbCount },
+          localAuditLog: { count: dbCount },
+        },
+      } as unknown as Awaited<ReturnType<typeof getLocalDatabase>>);
+      renderHome();
+
+      // The shift tile renders the opening time in ES clock format (08:30).
+      expect(await screen.findByText(/0?8:30/)).toBeInTheDocument();
+    });
+
+    it("shows 'Sin turno activo' when no shift is open", () => {
+      renderHome();
+
+      expect(screen.getByText("Sin turno activo")).toBeInTheDocument();
+    });
+
+    it("keeps exactly one 'Nueva venta' button (no duplicated primary CTA)", () => {
+      renderHome();
+
+      // The bento restructure removed the duplicate big CTA; the quick
+      // action grid is now the single entry point for a new sale.
       const saleButtons = screen.getAllByRole("button", {
         name: /nueva venta/i,
       });
-      expect(saleButtons).toHaveLength(2);
-    });
-
-    it("renders a primary-styled new-sale button in the cashier section", () => {
-      renderHome();
-
-      // Two buttons match "Nueva venta": one in QuickActionsCard (aria-label)
-      // and one in the cashier section (pos-button-primary class).
-      // Find the one with the primary button styling.
-      const saleButtons = screen.getAllByRole("button", {
-        name: /nueva venta/i,
-      });
-      const cashierBtn = saleButtons.find((btn) =>
-        btn.className.includes("pos-button-primary"),
-      );
-      expect(cashierBtn).toBeInTheDocument();
-      expect(cashierBtn!.className).toContain("pos-button-primary");
-    });
-
-    it("the cashier section new-sale button dispatches navigateToSales on click", () => {
-      const store = createTestStore();
-      const dispatch = vi.spyOn(store, "dispatch");
-      renderHome(store);
-
-      // The primary-styled button is the one in the cashier section
-      const primaryBtn = screen
-        .getAllByRole("button", { name: /nueva venta/i })
-        .find((btn) => btn.className.includes("pos-button-primary"))!;
-      primaryBtn.click();
-
-      expect(dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "ui/navigateToSales" }),
-      );
+      expect(saleButtons).toHaveLength(1);
     });
 
     it("shows online status as 'En línea' when connected", () => {
       renderHome();
 
-      expect(
-        screen.getByText("En línea"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("Sincronización saludable"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("En línea")).toBeInTheDocument();
     });
 
     it("shows offline status when disconnected", () => {
       mockIsOnline = false;
       renderHome();
 
-      expect(
-        screen.getByText("Sin conexión"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(/sin conexión — operando normal/i),
-      ).toBeInTheDocument();
+      expect(screen.getAllByText("Sin conexión").length).toBeGreaterThan(0);
     });
 
     it("shows quick actions grid heading", () => {
       renderHome();
 
-      expect(
-        screen.getByText("Accesos rápidos"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Accesos rápidos")).toBeInTheDocument();
     });
 
     it("does not show manager section", () => {
       renderHome();
 
+      expect(screen.queryByText("Usuarios activos")).not.toBeInTheDocument();
       expect(
-        screen.queryByText("Usuarios activos"),
+        screen.queryByText("Eventos de auditoría hoy"),
       ).not.toBeInTheDocument();
-      expect(
-        screen.queryByText("Actividad reciente"),
-      ).not.toBeInTheDocument();
-    });
-
-    it("shows the loaded today-sales count on the stats card", async () => {
-      // Override the default zero-count mock so the real-data wiring is
-      // exercised end-to-end (countUp receives the loaded value).
-      vi.mocked(getLocalDatabase).mockResolvedValueOnce({
-        prisma: {
-          sale: { count: vi.fn().mockResolvedValue(12) },
-          user: { count: vi.fn().mockResolvedValue(0) },
-        },
-        // The component only reads `prisma`; the partial mock is cast to
-        // the full handle shape for typechecking.
-      } as unknown as Awaited<ReturnType<typeof getLocalDatabase>>);
-      renderHome();
-
-      // The description reflects the loaded count immediately (no
-      // animation), while the main value counts up toward it.
-      expect(
-        await screen.findByText(/transacciones: 12/i),
-      ).toBeInTheDocument();
     });
 
     it("does not show inventory section", () => {
       renderHome();
 
-      expect(
-        screen.queryByText("Alertas de stock bajo"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Stock bajo")).not.toBeInTheDocument();
     });
 
     it("does not show accountant section", () => {
       renderHome();
 
       expect(
-        screen.queryByText("Gestión fiscal"),
+        screen.queryByText("Facturas emitidas hoy"),
       ).not.toBeInTheDocument();
     });
   });
@@ -413,11 +412,30 @@ describe("Home", () => {
       setSessionRole("INVENTORY_ASSISTANT");
     });
 
-    it("shows inventory section with low stock alerts", () => {
+    it("shows the inventory alert tiles with real counts", async () => {
+      vi.mocked(getLocalDatabase).mockResolvedValueOnce({
+        prisma: {
+          sale: {
+            count: vi.fn().mockResolvedValue(0),
+            aggregate: saleAggregate,
+          },
+          user: { count: vi.fn().mockResolvedValue(0) },
+          cashShift: {
+            count: vi.fn().mockResolvedValue(0),
+            findFirst: cashShiftFindFirst,
+          },
+          lot: {
+            count: vi.fn().mockResolvedValue(5),
+          },
+          inventoryAdjustmentDocument: { count: vi.fn().mockResolvedValue(2) },
+          localAuditLog: { count: dbCount },
+        },
+      } as unknown as Awaited<ReturnType<typeof getLocalDatabase>>);
       renderHome();
 
+      expect(screen.getByText("Stock bajo")).toBeInTheDocument();
       expect(
-        screen.getByText("Alertas de stock bajo"),
+        await screen.findByText("Ajustes en borrador"),
       ).toBeInTheDocument();
     });
 
@@ -425,42 +443,33 @@ describe("Home", () => {
       renderHome();
 
       // "home.subtitle_inventory" → "Control de inventario"
-      expect(
-        screen.getByText("Control de inventario"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Control de inventario")).toBeInTheDocument();
     });
 
     it("does not show cashier section", () => {
       renderHome();
 
-      expect(
-        screen.queryByText("Resumen del día"),
-      ).not.toBeInTheDocument();
+      // The shift tile is unique to the cashier section.
+      expect(screen.queryByText("Turno activo")).not.toBeInTheDocument();
     });
 
     it("does not show manager section", () => {
       renderHome();
 
-      expect(
-        screen.queryByText("Usuarios activos"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Usuarios activos")).not.toBeInTheDocument();
     });
 
     it("does not show accountant section", () => {
       renderHome();
 
-      expect(
-        screen.queryByText("Gestión fiscal"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Gestión fiscal")).not.toBeInTheDocument();
     });
 
     it("shows role badge for inventory assistant", () => {
       renderHome();
 
       // "roles.inventory_assistant" → "Asistente de inventario"
-      expect(
-        screen.getByText("Asistente de inventario"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Asistente de inventario")).toBeInTheDocument();
     });
   });
 
@@ -471,52 +480,56 @@ describe("Home", () => {
       setSessionRole("MANAGER");
     });
 
-    it("shows manager section with admin overview cards", () => {
+    it("shows manager section with admin overview tiles", () => {
       renderHome();
 
-      expect(
-        screen.getByText("Usuarios activos"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("Sincronización"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("Actividad reciente"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Usuarios activos")).toBeInTheDocument();
+      expect(screen.getByText("Sincronización")).toBeInTheDocument();
+      expect(screen.getByText("Eventos de auditoría hoy")).toBeInTheDocument();
+      expect(screen.getByText("Estado de turnos")).toBeInTheDocument();
+    });
+
+    it("audit tile is a clickable button that navigates to the audit log", () => {
+      const store = createTestStore();
+      const dispatch = vi.spyOn(store, "dispatch");
+      renderHome(store);
+
+      const auditTile = screen.getByRole("button", {
+        name: "Eventos de auditoría hoy",
+      });
+      auditTile.click();
+
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "ui/navigateToAuditLog" }),
+      );
     });
 
     it("shows subtitle for manager role", () => {
       renderHome();
 
       // "home.subtitle_manager" → "Panel de gestión"
-      expect(
-        screen.getByText("Panel de gestión"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Panel de gestión")).toBeInTheDocument();
     });
 
     it("does not show cashier section", () => {
       renderHome();
 
-      expect(
-        screen.queryByText("Resumen del día"),
-      ).not.toBeInTheDocument();
+      // The shift tile is unique to the cashier section ("home.today_stats"
+      // now also appears in the manager hero).
+      expect(screen.queryByText("Turno activo")).not.toBeInTheDocument();
     });
 
     it("does not show inventory section", () => {
       renderHome();
 
-      expect(
-        screen.queryByText("Alertas de stock bajo"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Stock bajo")).not.toBeInTheDocument();
     });
 
     it("shows role badge for manager", () => {
       renderHome();
 
       // "roles.manager" → "Gerente" (es locale is default in i18n/index.ts)
-      expect(
-        screen.getByText("Gerente"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Gerente")).toBeInTheDocument();
     });
   });
 
@@ -531,34 +544,28 @@ describe("Home", () => {
       renderHome();
 
       // "home.subtitle_accountant" → "Panel contable"
-      expect(
-        screen.getByText("Panel contable"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Panel contable")).toBeInTheDocument();
     });
 
     it("does not show cashier section", () => {
       renderHome();
 
-      expect(
-        screen.queryByText("Resumen del día"),
-      ).not.toBeInTheDocument();
+      // "home.today_stats" is shared by cashier hero and manager hero; the
+      // shift tile is unique to the cashier section.
+      expect(screen.queryByText("Turno activo")).not.toBeInTheDocument();
     });
 
     it("does not show inventory section", () => {
       renderHome();
 
-      expect(
-        screen.queryByText("Alertas de stock bajo"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Stock bajo")).not.toBeInTheDocument();
     });
 
     it("shows role badge for accountant", () => {
       renderHome();
 
       // "roles.accountant" → "Contador"
-      expect(
-        screen.getByText("Contador"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Contador")).toBeInTheDocument();
     });
 
     // NOTE: ACCOUNTANT (level 1) passes hasMinRole(MANAGER, level 1), so
@@ -570,11 +577,9 @@ describe("Home", () => {
     it("does not render the manager section for ACCOUNTANT (hierarchy quirk)", () => {
       renderHome();
 
+      expect(screen.queryByText("Usuarios activos")).not.toBeInTheDocument();
       expect(
-        screen.queryByText("Usuarios activos"),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.queryByText("Actividad reciente"),
+        screen.queryByText("Eventos de auditoría hoy"),
       ).not.toBeInTheDocument();
     });
 
@@ -582,7 +587,7 @@ describe("Home", () => {
       renderHome();
 
       expect(
-        screen.queryByText("Gestión fiscal"),
+        screen.queryByText("Facturas emitidas hoy"),
       ).not.toBeInTheDocument();
     });
   });
@@ -597,30 +602,22 @@ describe("Home", () => {
     it("shows manager section for OWNER (hierarchy check)", () => {
       renderHome();
 
-      expect(
-        screen.getByText("Usuarios activos"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("Actividad reciente"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Usuarios activos")).toBeInTheDocument();
+      expect(screen.getByText("Eventos de auditoría hoy")).toBeInTheDocument();
     });
 
     it("shows subtitle for owner role", () => {
       renderHome();
 
       // "home.subtitle_owner" → "Panel de administración"
-      expect(
-        screen.getByText("Panel de administración"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Panel de administración")).toBeInTheDocument();
     });
 
     it("shows role badge for owner", () => {
       renderHome();
 
       // "roles.owner" → "Dueño"
-      expect(
-        screen.getByText("Dueño"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Dueño")).toBeInTheDocument();
     });
   });
 
@@ -647,7 +644,9 @@ describe("Home", () => {
       renderHome();
 
       expect(mockUseFiscalCertificate).not.toHaveBeenCalled();
-      expect(screen.queryByRole("region", BANNER_REGION)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", BANNER_REGION),
+      ).not.toBeInTheDocument();
     });
 
     it("does not mount the banner for ACCOUNTANT", () => {
@@ -655,7 +654,9 @@ describe("Home", () => {
       renderHome();
 
       expect(mockUseFiscalCertificate).not.toHaveBeenCalled();
-      expect(screen.queryByRole("region", BANNER_REGION)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", BANNER_REGION),
+      ).not.toBeInTheDocument();
     });
 
     it("does not mount the banner for MANAGER (fiscal endpoints reject MANAGER server-side)", () => {
@@ -663,7 +664,9 @@ describe("Home", () => {
       renderHome();
 
       expect(mockUseFiscalCertificate).not.toHaveBeenCalled();
-      expect(screen.queryByRole("region", BANNER_REGION)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", BANNER_REGION),
+      ).not.toBeInTheDocument();
     });
 
     it("mounts the banner for OWNER on a CERTIFICATE plan with no certificate", () => {
@@ -700,15 +703,9 @@ describe("Home", () => {
       renderHome();
 
       // Content should still render even without animations
-      expect(
-        screen.getByText("Hola, María"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("Cajero"),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText("Accesos rápidos"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Hola, María")).toBeInTheDocument();
+      expect(screen.getByText("Cajero")).toBeInTheDocument();
+      expect(screen.getByText("Accesos rápidos")).toBeInTheDocument();
     });
   });
 
