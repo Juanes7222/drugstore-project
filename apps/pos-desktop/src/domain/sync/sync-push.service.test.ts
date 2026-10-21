@@ -404,6 +404,19 @@ describe("SyncPushService", () => {
       expect(classifyFailure(412, "insufficient stock")).toBe("BUSINESS_RULE");
       expect(classifyFailure(418, "business rule violation")).toBe("BUSINESS_RULE");
     });
+
+    it("returns VALIDATION for the per-operation rejection status when the server refused the payload", () => {
+      // The batch's own status says nothing about the operation inside it, so
+      // a per-operation rejection is classified from the body alone, under the
+      // status 412. A payload the server's schema refused must not be recorded
+      // as a business-rule failure.
+      expect(
+        classifyFailure(
+          412,
+          "Sync payload validation failed for PRODUCT_CREATION — barcodes: Array must contain at most 20 element(s)",
+        ),
+      ).toBe("VALIDATION");
+    });
   });
 
   describe("pushPending (invalid JSON response)", () => {

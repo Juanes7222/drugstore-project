@@ -181,6 +181,21 @@ export function classifyFailure(
     ) {
       return 'CONFLICT';
     }
+    // A payload the server's own schema refused says so in its body, and the
+    // rejection arrives with a status that does not reach the 400/422 branch
+    // above (the per-operation rejection uses 412, because the batch's own
+    // status says nothing about the operation). Without this the category
+    // fell through to the catch-all below and a malformed operation was
+    // recorded as a business-rule failure — the two look identical on the
+    // sync-health screen even though one is the cashier's mistake and the
+    // other is the store's.
+    if (
+      lower.includes('validation') ||
+      lower.includes('schema') ||
+      lower.includes('malformed')
+    ) {
+      return 'VALIDATION';
+    }
     return 'BUSINESS_RULE';
   }
 
