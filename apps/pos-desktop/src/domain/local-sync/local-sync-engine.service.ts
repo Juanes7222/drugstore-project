@@ -63,12 +63,17 @@ const RELAY_BATCH_SIZE = 25;
 
 /**
  * Queue statuses that must never be relayed: PERMANENT_FAILURE entries were
- * rejected by the server (relaying would poison peers) and DISCARDED entries
- * were explicitly written off by a manager.
+ * rejected by the server (relaying would poison peers), DISCARDED entries
+ * were explicitly written off by a manager, COMPLETED entries already
+ * reached the server (relaying them would make peers adopt and re-push
+ * finished work), and PROCESSING entries are mid-flight on this station's
+ * own push pipeline.
  */
 const NON_RELAYABLE_STATUSES: SyncStatus[] = [
   'PERMANENT_FAILURE' as SyncStatus,
   'DISCARDED' as SyncStatus,
+  "COMPLETED" as SyncStatus,
+  "PROCESSING" as SyncStatus,
 ];
 
 const DEFAULT_OPERATION_PRIORITY = 99;
@@ -340,7 +345,12 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
     return { ranAt, outcome, pushedToHub, adoptedFromHub, ...extra };
   }
 
-  /** True PENDING entries still missing LAN relay (single cheap count). */
+  /** True PENDING entries still missing LAN relay (single cheap count).
+   * Mirrors the sync-metrics service: COMPLETED (or otherwise settled)
+   * entries never carry `lanRelayedAt` when they went straight to the
+   * server, so counting any non-relayable status here made the "por
+   * replicar" number grow with every successful direct sync on a
+   * no-hub workstation. */
   private async countNotRelayed(): Promise<number> {
     try {
       return await this.prisma.syncQueue.count({

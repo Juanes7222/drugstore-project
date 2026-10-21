@@ -283,6 +283,33 @@ describe("createLocalSyncEngine", () => {
       expect(mockInvoke).not.toHaveBeenCalledWith("push_to_hub", expect.anything());
     });
 
+    it("only fetches actionable statuses — COMPLETED/PROCESSING settled work is never re-relayed", async () => {
+      // Regression: on a hubless workstation every successful direct-to-server
+      // sync used to leave a COMPLETED row with lanRelayedAt=null, and the
+      // engine kept re-relaying those to the hub while "Por replicar" grew
+      // forever. The relayable set must exclude settled statuses — the same
+      // set the pendingNotRelayed counter uses so the UI count matches.
+      const findMany = vi.fn().mockResolvedValue([]);
+      const { prisma } = makePrismaMock({ findManyImpl: findMany });
+
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus();
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub") return { operations: [], nextSince: new Date().toISOString() };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId });
+
+      await engine.runCycle();
+
+      expect(findMany).toHaveBeenCalled();
+      const where = (findMany.mock.calls[0]?.[0] as { where?: { status?: { notIn?: string[] } } })?.where;
+      expect(where?.status?.notIn).toEqual(
+        expect.arrayContaining(["COMPLETED", "PROCESSING", "PERMANENT_FAILURE", "DISCARDED"]),
+      );
+    });
+
     it("sends operations ordered by OPERATION_PRIORITY (PRODUCT_CREATION before SALE)", async () => {
       // Provide entries in reverse priority order to ensure sorting is applied
       const sale = makeRelayableEntry({
