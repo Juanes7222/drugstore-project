@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useInventoryCountService, useServiceContext } from '../common/service-context';
 import { useAppDispatch } from '@/store/hooks';
-import { navigateBackToSales } from '@/store/slices/ui-slice';
+import { navigateBack } from '@/store/slices/ui-slice';
 import { notify } from '@/utils/notify';
 import { PlusIcon, ArrowLeftIcon, PackageIcon, ScaleIcon, ClipboardListIcon, CheckCircleIcon, AlertTriangleIcon, RefreshCwIcon } from '@/components/ui/icons';
 import { SessionCard } from './session-card';
@@ -513,8 +513,8 @@ export const InventoryCountPage: FC = () => {
           <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1" style={{ backgroundColor: 'color-mix(in srgb, var(--color-ink) 6%, transparent)' }}>
             {t('inventory_count.badge_tolerance')}
           </span>
-          <button type="button" onClick={() => dispatch(navigateBackToSales())} className="ml-auto inline-flex items-center gap-1 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-pharma)]">
-            <ArrowLeftIcon size={12} aria-hidden /> {t('inventory_count.back_to_sales')}
+          <button type="button" onClick={() => dispatch(navigateBack())} className="ml-auto inline-flex items-center gap-1 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-pharma)]">
+            <ArrowLeftIcon size={12} aria-hidden /> {t('inventory_count.back')}
           </button>
         </div>
       </header>

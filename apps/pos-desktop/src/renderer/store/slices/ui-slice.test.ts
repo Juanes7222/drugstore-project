@@ -7,6 +7,7 @@ import {
   completeSaleCompletion,
   initiateSaleCompletion,
   navigateBackToSales,
+  navigateBack,
   navigateToAbout,
   navigateToAdminMenu,
   navigateToAuditLog,
@@ -14,9 +15,11 @@ import {
   navigateToInventoryAdjustments,
   navigateToLogin,
   navigateToPrescriptions,
+  navigateToProducts,
   navigateToReceipt,
   navigateToRecovery,
   navigateToReturns,
+  navigateToSales,
   navigateToSyncHealth,
   navigateToTwoFactorSetup,
   navigateToUserManagement,
@@ -130,6 +133,62 @@ describe("ui slice — navigation shorthands", () => {
     "navigateBackToSales",
     assertNavigateTo(navigateBackToSales(), "sales"),
   );
+});
+
+describe("ui slice — back navigation (screen history)", () => {
+  it("navigateToInventoryAdjustments pushes the previous screen onto history", () => {
+    let state = uiSlice.reducer(
+      uiSlice.getInitialState(),
+      navigateToSales(),
+    );
+    state = uiSlice.reducer(state, navigateToInventoryAdjustments());
+
+    expect(state.activeScreen).toBe("inventory-adjustments");
+    expect(state.screenHistory).toEqual(["home", "sales"]);
+  });
+
+  it("navigateBack returns to the screen the user actually came from", () => {
+    // home → sales → products → inventory-adjustments: back must land on
+    // products, not on sales (the previous hardcoded behavior).
+    let state = uiSlice.reducer(uiSlice.getInitialState(), navigateToSales());
+    state = uiSlice.reducer(state, navigateToProducts());
+    state = uiSlice.reducer(state, navigateToInventoryAdjustments());
+    state = uiSlice.reducer(state, navigateBack());
+
+    expect(state.activeScreen).toBe("products");
+    expect(state.screenHistory).toEqual(["home", "sales"]);
+  });
+
+  it("repeated navigateBack unwinds all the way back", () => {
+    let state = uiSlice.reducer(uiSlice.getInitialState(), navigateToSales());
+    state = uiSlice.reducer(state, navigateToProducts());
+    state = uiSlice.reducer(state, navigateBack());
+    state = uiSlice.reducer(state, navigateBack());
+
+    expect(state.activeScreen).toBe("home");
+    expect(state.screenHistory).toEqual([]);
+  });
+
+  it("navigateBack falls back to home when the history is empty", () => {
+    // Deep-link scenario: session starts on a non-home screen with an empty
+    // stack. Back lands on home, never on sales (no universal contract).
+    const start = uiSlice.reducer(
+      uiSlice.getInitialState(),
+      setActiveScreen("inventory-adjustments"),
+    );
+    const state = uiSlice.reducer(start, navigateBack());
+
+    expect(state.activeScreen).toBe("home");
+    expect(state.screenHistory).toEqual([]);
+  });
+
+  it("navigating to the same screen does not duplicate a history entry", () => {
+    const start = uiSlice.reducer(uiSlice.getInitialState(), navigateToSales());
+    const state = uiSlice.reducer(start, navigateToSales());
+
+    expect(state.activeScreen).toBe("sales");
+    expect(state.screenHistory).toEqual(["home"]);
+  });
 });
 
 describe("ui slice — sale completion handoff", () => {

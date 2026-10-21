@@ -148,6 +148,7 @@ const createTestStore = (
     preloadedState: {
       ui: {
         activeScreen: "receipt" as const,
+        screenHistory: [],
         saleCompletionPhase: phase,
         currentSaleId: null,
         pendingPurchaseOrderId: null,

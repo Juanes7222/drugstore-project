@@ -20,7 +20,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppDispatch } from "@/store/hooks";
-import { navigateBackToSales } from "@/store/slices/ui-slice";
+import { navigateBack } from "@/store/slices/ui-slice";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import {
@@ -158,7 +158,7 @@ export const InventoryAdjustmentsPage: FC = () => {
   }, []);
 
   const handleBack = useCallback(() => {
-    dispatch(navigateBackToSales());
+    dispatch(navigateBack());
   }, [dispatch]);
 
   const handleSubmit = useCallback(async () => {

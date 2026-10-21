@@ -76,6 +76,7 @@ const createTestStore = (
       },
       ui: {
         activeScreen: "prescriptions" as const,
+        screenHistory: [],
         saleCompletionPhase: "idle" as const,
         currentSaleId: null,
         pendingPurchaseOrderId: null,

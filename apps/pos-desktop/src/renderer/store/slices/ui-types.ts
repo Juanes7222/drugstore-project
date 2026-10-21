@@ -66,6 +66,13 @@ export interface PrescriptionFlowState {
 
 export interface UiState {
   activeScreen: PosScreen;
+  /**
+   * Back-stack of previously visited screens (most recent last).
+   * Populated by the navigation reducers so `navigateBack` returns to the
+   * screen the user actually came from (e.g. products → inventory → back
+   * goes back to products, not to sales).
+   */
+  screenHistory: PosScreen[];
   saleCompletionPhase: SaleCompletionPhase;
   prescriptionFlow: PrescriptionFlowState;
   /** The sale ID persisted in the local DB (set after create(), consumed during confirm()). */

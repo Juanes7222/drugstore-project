@@ -41,7 +41,7 @@ vi.mock("@/store/hooks", () => ({
 }));
 
 vi.mock("@/store/slices/ui-slice", () => ({
-  navigateBackToSales: () => ({ type: "ui/navigateBackToSales" }),
+  navigateBack: () => ({ type: "ui/navigateBack" }),
 }));
 
 vi.mock("@/hooks/use-online-status", () => ({

@@ -29,10 +29,27 @@ const initialPrescriptionFlow: PrescriptionFlowState = {
 
 const initialState: UiState = {
   activeScreen: "home",
+  screenHistory: [],
   saleCompletionPhase: "idle",
   prescriptionFlow: initialPrescriptionFlow,
   currentSaleId: null,
 };
+
+/**
+ * Shared navigation transition: push the current screen onto the history
+ * stack (capped) and land on `screen`. Applied by every `navigateTo*`
+ * shorthand so `navigateBack` can return to the screen the user actually
+ * came from.
+ */
+function goTo(state: UiState, screen: PosScreen): void {
+  // No-op navigation (same screen) must not push a duplicate history entry.
+  if (screen === state.activeScreen) return;
+  state.screenHistory.push(state.activeScreen);
+  if (state.screenHistory.length > 50) {
+    state.screenHistory.shift();
+  }
+  state.activeScreen = screen;
+}
 
 export const uiSlice = createSlice({
   name: "ui",
@@ -45,144 +62,155 @@ export const uiSlice = createSlice({
     /* ---- Navigation shorthands ---- */
 
     navigateToReturns: (state) => {
-      state.activeScreen = "returns";
+      goTo(state, "returns");
     },
 
     navigateToCashShift: (state) => {
-      state.activeScreen = "cash-shift";
+      goTo(state, "cash-shift");
     },
 
     navigateToInventoryAdjustments: (state) => {
-      state.activeScreen = "inventory-adjustments";
+      goTo(state, "inventory-adjustments");
     },
 
     navigateToInventoryLots: (state) => {
-      state.activeScreen = "inventory-lots";
+      goTo(state, "inventory-lots");
     },
 
     navigateToProducts: (state) => {
-      state.activeScreen = "products";
+      goTo(state, "products");
     },
 
     navigateToPrescriptions: (state) => {
-      state.activeScreen = "prescriptions";
+      goTo(state, "prescriptions");
     },
 
     navigateToAdminMenu: (state) => {
-      state.activeScreen = "admin-menu";
+      goTo(state, "admin-menu");
     },
 
     navigateToFiscal: (state) => {
-      state.activeScreen = "fiscal";
+      goTo(state, "fiscal");
     },
 
     navigateToSalesHistory: (state) => {
-      state.activeScreen = "sales-history";
+      goTo(state, "sales-history");
     },
 
     navigateToSyncHealth: (state) => {
-      state.activeScreen = "sync-health";
+      goTo(state, "sync-health");
     },
 
     navigateToLocalNetwork: (state) => {
-      state.activeScreen = "local-network";
+      goTo(state, "local-network");
     },
 
     navigateToProductosMain: (state) => {
-      state.activeScreen = "productos-main";
+      goTo(state, "productos-main");
     },
 
     navigateToPurchasesMain: (state) => {
-      state.activeScreen = "purchases-main";
+      goTo(state, "purchases-main");
     },
     navigateToSuppliers: (state) => {
-      state.activeScreen = "suppliers";
+      goTo(state, "suppliers");
     },
 
     navigateToPurchaseOrders: (state) => {
-      state.activeScreen = "purchase-orders";
+      goTo(state, "purchase-orders");
     },
 
     navigateToPurchaseReceptions: (state) => {
-      state.activeScreen = "purchase-receptions";
+      goTo(state, "purchase-receptions");
     },
 
     navigateToSupplierReturns: (state) => {
-      state.activeScreen = "supplier-returns";
+      goTo(state, "supplier-returns");
     },
 
     navigateToReports: (state) => {
-      state.activeScreen = "reports";
+      goTo(state, "reports");
     },
 
     navigateToInventoryCount: (state) => {
-      state.activeScreen = "inventory-count";
+      goTo(state, "inventory-count");
     },
 
     navigateToRecovery: (state) => {
-      state.activeScreen = "recovery";
+      goTo(state, "recovery");
     },
 
     navigateToUserManagement: (state) => {
-      state.activeScreen = "user-management";
+      goTo(state, "user-management");
     },
 
     navigateToAuditLog: (state) => {
-      state.activeScreen = "audit-log";
+      goTo(state, "audit-log");
     },
 
     navigateToClients: (state) => {
-      state.activeScreen = "clients";
+      goTo(state, "clients");
     },
 
     navigateToLicenseStatus: (state) => {
-      state.activeScreen = "license-status";
+      goTo(state, "license-status");
     },
 
     navigateToPrinting: (state) => {
-      state.activeScreen = "printing";
+      goTo(state, "printing");
     },
 
     navigateToPrinters: (state) => {
-      state.activeScreen = "printers";
+      goTo(state, "printers");
     },
 
     navigateToPrintQueue: (state) => {
-      state.activeScreen = "print-queue";
+      goTo(state, "print-queue");
     },
 
     navigateToSetupWizard: (state) => {
-      state.activeScreen = "setup-wizard";
+      goTo(state, "setup-wizard");
     },
 
     navigateToHome: (state) => {
-      state.activeScreen = "home";
+      goTo(state, "home");
     },
 
     navigateToAbout: (state) => {
-      state.activeScreen = "about";
+      goTo(state, "about");
     },
 
     navigateToLogin: (state) => {
-      state.activeScreen = "login";
+      goTo(state, "login");
     },
 
     navigateToSales: (state) => {
-      state.activeScreen = "sales";
+      goTo(state, "sales");
     },
 
     navigateToForgotPassword: (state) => {
-      state.activeScreen = "forgot-password";
+      goTo(state, "forgot-password");
     },
 
 
 
     navigateToTwoFactorSetup: (state) => {
-      state.activeScreen = "2fa-setup";
+      goTo(state, "2fa-setup");
     },
 
     navigateBackToSales: (state) => {
-      state.activeScreen = "sales";
+      goTo(state, "sales");
+    },
+
+    /**
+     * Go back to the screen the user actually came from: pop the most
+     * recent entry off `screenHistory`. Falls back to `home` when the
+     * stack is empty (deep-link / fresh session), never to `sales` —
+     * there is no universal "sales is in control" contract in the POS.
+     */
+    navigateBack: (state) => {
+      const previous = state.screenHistory.pop();
+      state.activeScreen = previous ?? "home";
     },
 
     /* ---- Sale completion handoff ---- */
@@ -206,6 +234,9 @@ export const uiSlice = createSlice({
 
     resetSaleFlow: (state) => {
       state.activeScreen = "sales";
+      // The sale flow terminally returns to sales; history accumulated
+      // during the sale (e.g. detours into products) must not survive it.
+      state.screenHistory = [];
       state.saleCompletionPhase = "idle";
       state.prescriptionFlow = initialPrescriptionFlow;
       state.currentSaleId = null;
@@ -280,6 +311,7 @@ export const {
   navigateToForgotPassword,
   navigateToTwoFactorSetup,
   navigateBackToSales,
+  navigateBack,
   initiateSaleCompletion,
   navigateToReceipt,
   completeSaleCompletion,

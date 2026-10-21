@@ -546,7 +546,7 @@ describe("InventoryAdjustmentsPage", () => {
   // ── Navigation ──────────────────────────────────────────────────────
 
   describe("navigation", () => {
-    it("renders a back button that dispatches navigateBackToSales", async () => {
+    it("renders a back button that dispatches navigateBack", async () => {
       const store = createTestStore();
       const dispatch = vi.spyOn(store, "dispatch");
       renderPage(store);
@@ -555,7 +555,7 @@ describe("InventoryAdjustmentsPage", () => {
       await userEvent.click(backButton);
 
       expect(dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "ui/navigateBackToSales" }),
+        expect.objectContaining({ type: "ui/navigateBack" }),
       );
     });
   });

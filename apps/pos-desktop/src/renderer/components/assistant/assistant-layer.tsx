@@ -59,12 +59,13 @@ export const AssistantLayer: FC = () => {
 
   // ---- Global keyboard shortcuts ----
   const handleNewSale = useCallback(async () => {
-    const [{ store }, { resetSaleFlow, navigateBackToSales }] = await Promise.all([
+    // resetSaleFlow terminally lands on "sales" — the extra back-to-sales
+    // dispatch would only push a duplicate history entry.
+    const [{ store }, { resetSaleFlow }] = await Promise.all([
       import("../../store/store"),
       import("../../store/slices/ui-slice"),
     ]);
     store.dispatch(resetSaleFlow());
-    store.dispatch(navigateBackToSales());
   }, []);
 
   const handleSyncNow = useCallback(async () => {

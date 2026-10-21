@@ -1105,6 +1105,7 @@
     "badge_blind": "Ciego por defecto",
     "badge_tolerance": "Tolerancia 2% · Alto valor siempre recontado",
     "back_to_sales": "Volver a ventas",
+    "back": "Volver",
     "list": {
       "empty_title": "Aún no hay reconteos",
       "empty_desc": "Cree el primero. El sistema congelará el stock teórico al iniciar — usted cuenta a ciegas, el sistema solo pide recuento donde la diferencia supera la tolerancia o el producto es de alto valor.",

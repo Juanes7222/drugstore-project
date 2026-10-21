@@ -492,9 +492,7 @@ describe("ReturnsPage", () => {
         expect(screen.getByRole("status")).toBeInTheDocument();
       });
     });
-  });
-
-  it("renders a back button that dispatches navigateBackToSales", () => {
+  });  it("renders a back button that dispatches navigateBack", () => {
     const store = createTestStore();
     const dispatch = vi.spyOn(store, "dispatch");
     renderPage(store);
@@ -503,7 +501,7 @@ describe("ReturnsPage", () => {
     fireEvent.click(backButton);
 
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "ui/navigateBackToSales" }),
+      expect.objectContaining({ type: "ui/navigateBack" }),
     );
   });
 
