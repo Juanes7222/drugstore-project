@@ -13,6 +13,9 @@ import { addItem, setClient } from "@/store/slices/sales-slice";
 import { initializePayment } from "@/store/slices/payment-slice";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { SaleType } from "@pharmacy/shared-types";
+import i18n from "@/i18n";
+import { formatCurrency } from "@/utils/format-currency";
+import { PriceBelowCostException } from "../../domain/sales-pos/exceptions";
 import type { CatalogItem } from "@/services/catalog-service";
 import type {
   CartItem,
@@ -395,6 +398,34 @@ describe("useSalesTransaction", () => {
         initializePayment({ totalCents: 55_000 }),
       );
       expect(mockDispatch).toHaveBeenCalledWith(setActiveScreen("payment"));
+    });
+
+    it("reports the below-cost price in pesos when create() rejects with PriceBelowCostException", async () => {
+      mockSalesState = {
+        items: [checkoutCartItem],
+        selectedClient: null,
+        delivery: null,
+        selectedLineId: null,
+        undoStack: [],
+        heldCarts: [],
+      };
+      // The domain layer reports amounts in pesos, not cents.
+      mockSalesPosService.create.mockRejectedValue(
+        new PriceBelowCostException("p-001", 3000, 12500, "COST"),
+      );
+      const { result } = renderHook(() => useSalesTransaction());
+
+      await act(async () => {
+        await result.current.handleCheckout();
+      });
+
+      expect(result.current.actionError).toBe(
+        i18n.t("sales.cart.error_price_below_cost", {
+          name: checkoutCartItem.name,
+          price: formatCurrency(300_000),
+          floor: formatCurrency(1_250_000),
+        }),
+      );
     });
   });
 

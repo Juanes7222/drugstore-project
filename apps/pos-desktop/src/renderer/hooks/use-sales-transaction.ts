@@ -280,8 +280,9 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
         setActionError(
           i18n.t("sales.cart.error_price_below_cost", {
             name: itemName,
-            price: formatCurrency(err.attemptedPrice),
-            floor: formatCurrency(err.floorPrice),
+            // The domain layer works in pesos; formatCurrency expects cents.
+            price: formatCurrency(Math.round(err.attemptedPrice * 100)),
+            floor: formatCurrency(Math.round(err.floorPrice * 100)),
           }),
         );
       } else if (err instanceof DiscountExceedsRoleLimitException) {
