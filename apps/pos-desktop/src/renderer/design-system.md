@@ -379,56 +379,121 @@ Each method pre‑configures a sensible default duration (4 s success/info,
 6 s warning, 8 s error, persistent for loading/action). Pass `duration: null`
 to make any toast persistent.
 
-### Placement
+### Placement (updated 2026‑10‑20)
 
-The `<Toaster position="bottom-right" />` sits inside `<ServiceProvider>`
-in `App.tsx`, so toasts are available on every screen including auth pages.
-Bottom‑right keeps notifications clear of the cart panel (right 40%) and
-the product search area (left 60%).
+The `<Toaster position="top-center" offset={{ top: "84px" }} />` sits
+inside `<ServiceProvider>` in `App.tsx`, so toasts are available on every
+screen including auth pages. Top‑center is the highest‑attention band
+that never collides with the sales cart (right 40%) or the product
+search area (left 60%); the 84px offset clears the app header. The
+old `bottom-right` placement visually competed with the cart and was
+the reason toasts went unnoticed.
+
+### Toast re‑skin (2026‑10‑20)
+
+The sileo defaults (Tailwind oklch hues, title‑casing, 350×40 pill) are
+re‑skinned in `global.css` onto the design system:
+
+* State colors come from the app tokens (`--color-pharma`,
+  `--color-error`, `--color-urgency`, `--color-sync`), so the toast
+  speaks the same color language as badges, chips and the sync pulse.
+* Pill enlarged to 380×48; title at `--text-body` semibold without
+  title‑casing (Spanish copy stays intact); description at
+  `--text-caption` in muted ink.
+* The SVG pill surface carries the system hairline border and the
+  elevated drop shadow, so it reads above panels and cards.
+* Default semantic icons per state are injected by `notify` (lucide,
+  18px, strokeWidth 1.75): CheckCircle (success), AlertCircle (error),
+  AlertTriangle (warning), Info (info). Callers can override via
+  `icon:` or opt out with `icon: null`.
+* `notify` lives in `utils/notify.tsx` and is covered by
+  `utils/notify.test.tsx`.
 
 ---
 
 ---
 
-## Home Dashboard — Role-Based Landing Page (added 2026-07-17)
+## Home Dashboard — Role-Based Landing Page (added 2026-07-17, redesigned 2026-10-20)
 
 The Home screen replaces "sales" as the default post-login destination. It is a
 role-aware dashboard that greets the user by name and surfaces the most relevant
 actions and information for their role.
 
+### Bento restructure (2026-10-20)
+
+All role stats are **real aggregates** from the local database, loaded once via
+`useHomeDashboardData` (sales conflicts/revenue today, invoices emitted today,
+my open shift, open shifts, low-stock / near-expiry / expired lot counts, draft
+adjustments, active users, audit events today). The old placeholder stats
+(`"—"` values, emoji alert rows, duplicate "Nueva venta" primary CTA) are
+gone. Loading is non-blocking: the header and quick actions render
+immediately and values fill in.
+
+Tile hierarchy follows the bento rule: tile size = data priority.
+
+```
+┌─────────────────────────────────┐ ┌────────────┐ ┌────────────┐
+│ HERO  Ventas de hoy             │ │ Turno      │ │ Sincroniza │
+│ $850.000 (text-amount, mono)    │ │ 08:30 o    │ │ ● En línea │
+│ 7 transacciones (caption)       │ │ Sin turno  │ │ N pend.    │
+└─────────────────────────────────┘ └────────────┘ └────────────┘
+```
+
+- **Hero tile** (spans 2 of 4 columns): the role's headline number,
+  rendered with the section's day figure in `font-data text-amount`
+  (28px — the same face as the cart grand total) with a caption detail.
+- **MetricTile**: small uppercase label + `font-data text-price` figure,
+  tone = ink (default) / urgency amber (fan stock, near expiry) /
+  error red (expired). Optional click-through (e.g. audit tile → audit
+  log screen) with hover elevation and focus-visible outline.
+- **SyncTile**: same color language as the header SyncStatusChip —
+  pharma dot = online, urgency = draining (N pendings), sync slate =
+  offline. No popover; the chip in the shell owns that.
+
+#### Role grids (4-col at lg, cells never left hollow)
+
+| Role | Row 1 | Row 2 |
+|------|-------|-------|
+| Cashier | Hero ventas hoy (2) + turno activo + sync | — |
+| Inventory Asst. | Stock bajo + próximos a vencer + vencidos + ajustes borrador | — |
+| Manager / Owner | Hero ventas hoy (2) + usuarios activos + turnos abiertos | Eventos audit hoy (2) + sync (2) |
+| Accountant | Hero facturas hoy (2) + ventas hoy + sync | — |
+
+ACCOUNTANT keeps the pre-existing hierarchy quirk: because it shares
+manager level, its own section stays gated off (`!isManagerOrAbove`) and
+only the header + quick actions render.
+
 ### Layout
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Hola, María                               [Role: Cajera]         │
-│  Listo para atender                                               │
-│                                                                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐            │
-│  │ 🛒 Nueva │ │ 🔄 Devol │ │ 📦 Invent│ │ 🔍 Buscar│            │
-│  │   Venta  │ │          │ │          │ │          │            │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘            │
-│                                                                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────────┐ │
-│  │ Stats    │ │ Shift    │ │ Sync     │ │ [ Nueva Venta ]     │ │
-│  │ Ventas   │ │ —        │ │ Online   │ │ (CTA primary button) │ │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────────────────┘ │
+│  Hola, María                               [Role badge, teal 12%]│
+│  Listo para atender                                              │
+│                                                                  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐             │
+│  │ Nueva    │ │ Devol    │ │ Invent   │ │ Buscar   │             │
+│  │ Venta    │ │          │ │          │ │          │             │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘             │
+│                                                                  │
+│  ── Bento role row (real data, no placeholders) ──               │
+│  Hero (2×)            │ Turno       │ Sync                       │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Role sections
 
-| Role | Quick Actions | Stats / Info |
+| Role | Quick Actions | Bento tiles |
 |------|--------------|--------------|
-| Cashier | New Sale, Return, Search Product | Today's sales count, shift status, sync status + CTA to start sale |
-| Inventory Asst. | Inventory Adjustments | Low stock alerts, near-expiry count, pending adjustments |
-| Manager / Owner | Users, Audit, Config, Sync | Active users, sync health, recent activity |
-| Accountant | (same quick nav as manager) | Fiscal panel, sync status, DIAN status |
-| Owner+ | All of the above | Full admin overview |
+| Cashier | New Sale, Return, Search Product | Hero: revenue today + transaction count; shift (open time or "Sin turno activo"); sync state |
+| Inventory Asst. | Inventory Adjustments | Low stock (amber), near expiry (amber), expired (red), draft adjustments |
+| Manager / Owner | Users, Audit, Config, Sync | Hero: revenue today; active users; open shifts; audit events today (→ audit screen); sync |
+| Accountant | (none today) | Invoices today hero; sales count; sync |
+| Owner+ | All of the above | Manager grid |
 
 ### Motion treatment
 
 Per the motion budget, only the initial staggered entrance uses animation
-(6 staggered groups, 60ms apart, 0.3s fade-up each). After that the Home
+(staggered groups, 60ms apart, 0.3s fade-up each). After that the Home
 page has no periodic or decorative motion — it is a launchpad, not a
 live-ticking dashboard. `prefers-reduced-motion` collapses all entrance
 animations to opacity-only.
@@ -438,6 +503,10 @@ animations to opacity-only.
 Every quick-action button uses a `lucide-react` icon (already a project
 dependency). Icons are decorative (`aria-hidden="true"`) and use Pharma
 Teal at 28px with `strokeWidth={1.5}` for a precise, non-heavy look.
+Metric tiles use the same family at 16px with muted ink. No emoji
+anywhere on the dashboard. Money figures use `formatMoney` (es-CO peso
+formatting, no decimals) — same unit as `sale.totalAmount` (pesos, not
+cents).
 
 ---
 
