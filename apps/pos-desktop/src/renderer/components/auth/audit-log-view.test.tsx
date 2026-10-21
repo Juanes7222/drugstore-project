@@ -4,7 +4,7 @@
  * Covers: role gate (MANAGER+), empty state, timeline cards as <article>
  * elements with aria-labels, day grouping (Hoy/Ayer), detail expand/collapse,
  * target display suppression for unknown:unknown, event filter change,
- * date range inputs, pagination controls, and refresh button.
+ * date range inputs, the load-more control, and refresh button.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -526,13 +526,13 @@ describe('AuditLogView', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Pagination
+  // Load more (replaces the text pager)
   // -----------------------------------------------------------------------
 
-  describe('pagination', () => {
-    it('shows Anterior / Siguiente buttons when total > pageSize (50)', async () => {
+  describe('load more', () => {
+    it('shows the load-more button when there are more rows than loaded', async () => {
       mockSessionState.session = managerSession;
-      // Return fewer rows than total to simulate current page being a partial slice
+      // Fewer rows than total: the timeline is a partial slice.
       mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
@@ -544,66 +544,30 @@ describe('AuditLogView', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole('button', { name: 'Anterior' }),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByRole('button', { name: 'Siguiente' }),
+          screen.getByRole('button', { name: /cargar más/i }),
         ).toBeInTheDocument();
       });
     });
 
-    it('disables the Anterior button on the first page', async () => {
+    it('does not render the load-more button when everything is loaded', async () => {
       mockSessionState.session = managerSession;
       mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
-        total: 100,
+        total: 1,
       });
 
       render(<AuditLogView />);
 
       await waitFor(() => {
         expect(
-          screen.getByRole('button', { name: 'Anterior' }),
-        ).toBeDisabled();
-      });
-    });
-
-    it('shows page indicator with correct page count', async () => {
-      mockSessionState.session = managerSession;
-      mockGetLocalAuditEntries.mockResolvedValue({
-        rows: [
-          makeLogEntry({ id: 'log-1' }),
-        ],
-        total: 100,
-      });
-
-      render(<AuditLogView />);
-
-      await waitFor(() => {
-        expect(
-          screen.getByText('1 de 2'),
+          screen.getByRole('article'),
         ).toBeInTheDocument();
       });
-    });
-
-    it('does not render pagination when total <= pageSize', async () => {
-      mockSessionState.session = managerSession;
-      mockGetLocalAuditEntries.mockResolvedValue({
-        rows: [
-          makeLogEntry({ id: 'log-1' }),
-        ],
-        total: 50,
-      });
-
-      render(<AuditLogView />);
-
-      await waitFor(() => {
-        expect(
-          screen.queryByRole('button', { name: 'Anterior' }),
-        ).not.toBeInTheDocument();
-      });
+      expect(
+        screen.queryByRole('button', { name: /cargar más/i }),
+      ).not.toBeInTheDocument();
     });
   });
 

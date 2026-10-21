@@ -469,4 +469,83 @@ describe("AuditLogView — filter routing logic", () => {
     expect(mockGetLocalAuditEntries).not.toHaveBeenCalled();
     expect(mockGetAuditLogs).not.toHaveBeenCalled();
   });
+
+  // ── Category chips — legend that filters ─────────────────────────────
+
+  it("filters the timeline when a category chip is toggled on", async () => {
+    mockGetLocalAuditEntries.mockResolvedValue({
+      rows: [
+        makeLocalRow({ id: "local-1", action: "CASH_SHIFT_OPENED" }),
+        makeLocalRow({ id: "local-2", action: "SALE_CONFIRMED" }),
+        makeLocalRow({ id: "local-3", action: "SALE_CONFIRMED" }),
+      ],
+      total: 3,
+    });
+    mockGetAuditLogs.mockResolvedValue({ rows: [], total: 0 });
+
+    render(<AuditLogView />);
+
+    // All three cards visible before any chip is pressed.
+    await waitFor(() => {
+      expect(screen.getAllByRole("article")).toHaveLength(3);
+    });
+
+    // Chips render per category present in the timeline, unpressed.
+    const chips = screen.getAllByRole("button", { pressed: false });
+    expect(chips.length).toBeGreaterThanOrEqual(2);
+
+    // Cash-shift rows: one of the chips (the last, lowest count) — click it
+    // and only its category cards survive.
+    const shiftChip = chips.find((chip) =>
+      chip.textContent?.includes("1"),
+    ) as HTMLElement;
+    await userEvent.click(shiftChip);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("article")).toHaveLength(1);
+    });
+    expect(shiftChip).toHaveAttribute("aria-pressed", "true");
+  });
+
+  // ── Load more — replaces the text pager ──────────────────────────────
+
+  it("appends the next page when the load-more button is pressed", async () => {
+    const rowsCall10 = [makeLocalRow({ id: "local-1" })];
+    const rowsCall11 = [
+      makeLocalRow({ id: "local-2", action: "SALE_CONFIRMED" }),
+    ];
+    let localCalls = 0;
+    mockGetLocalAuditEntries.mockImplementation(() => {
+      localCalls += 1;
+      return Promise.resolve({
+        rows: localCalls === 1 ? rowsCall10 : rowsCall11,
+        total: 60,
+      });
+    });
+    mockGetAuditLogs.mockResolvedValue({ rows: [], total: 0 });
+
+    render(<AuditLogView />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("article")).toBeInTheDocument();
+    });
+    expect(mockGetLocalAuditEntries.mock.calls[0][1].offset).toBe(0);
+
+    await userEvent.click(screen.getByRole("button", { name: /cargar más/i }));
+
+    await waitFor(() => {
+      // The appended row appears alongside the original — not a replacement.
+      expect(screen.getAllByRole("article")).toHaveLength(2);
+    });
+    const lastCall = mockGetLocalAuditEntries.mock.calls.at(-1);
+    expect(lastCall![1].offset).toBe(50);
+  });
+
+  it("event select groups its options by module with optgroups", async () => {
+    render(<AuditLogView />);
+
+    const eventSelect = screen.getByRole("combobox", { name: /evento/i });
+    const groups = within(eventSelect).getAllByRole("group");
+    expect(groups.length).toBeGreaterThan(1);
+  });
 });
