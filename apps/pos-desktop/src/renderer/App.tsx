@@ -66,7 +66,6 @@ import { AssistantLayer } from "./components/assistant/assistant-layer";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
 import type { PosScreen } from "@/store/slices/ui-types";
-import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useRequireActiveShift } from "@/hooks/use-require-active-shift";
 import { ShiftRequiredOverlay } from "@/components/common/shift-required-overlay";
 import { useLocalSessionStore } from "../domain/auth/local-session.store";
@@ -132,7 +131,6 @@ const SCREEN_ORDER: PosScreen[] = [
 const InnerApp: FC = () => {
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector(selectActiveScreen);
-  const isOnline = useOnlineStatus();
   const shouldReduceMotion = useReducedMotion();
   const { t } = useTranslation();
 
@@ -350,8 +348,6 @@ if (activeScreen === "company-setup") {
   if (session && !canAccessScreen(session, activeScreen)) {
     return (
       <AppShell
-        cashierName={session.fullName}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -384,8 +380,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "user-management") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -403,8 +397,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "audit-log") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -422,8 +414,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "license-status") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -441,8 +431,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "licensing-plans") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -460,8 +448,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "printing") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -479,8 +465,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "printers") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -498,8 +482,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "print-queue") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -517,8 +499,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "setup-wizard") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -536,8 +516,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "offline-sessions") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -555,8 +533,6 @@ if (activeScreen === "company-setup") {
   if (activeScreen === "local-network") {
     return (
       <AppShell
-        cashierName={session?.fullName || ""}
-        initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
         <div className="flex h-full">
@@ -573,8 +549,6 @@ if (activeScreen === "company-setup") {
 
   return (
     <AppShell
-      cashierName={session!.fullName}
-      initialSyncState={isOnline ? "online" : "offline"}
     >
       <OfflineModeBanner />
 
