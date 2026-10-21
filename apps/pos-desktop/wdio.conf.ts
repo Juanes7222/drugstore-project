@@ -49,6 +49,7 @@ import {
   stopRealBackend,
 } from "./e2e/real-backend";
 import { resolveEdgeDriverPath } from "./e2e/native-driver";
+import { closeServerStatePool } from "./e2e/server-state";
 
 /**
  * Workstation identity the whole suite agrees on.
@@ -177,6 +178,8 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
     "./e2e/sales-pricing-flow.e2e.ts",
     "./e2e/sales-config-flow.e2e.ts",
     "./e2e/sales-credit-flow.e2e.ts",
+    "./e2e/credit-payment-flow.e2e.ts",
+    "./e2e/server-rejection-flow.e2e.ts",
     "./e2e/returns-flow.e2e.ts",
     "./e2e/purchases-flow.e2e.ts",
     "./e2e/inventory-products-flow.e2e.ts",
@@ -263,6 +266,7 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
     shuttingDown = true;
     stopTauriDriver();
     await stopRealBackend();
+    await closeServerStatePool();
     killLeftoverDrivers();
   },
 };
