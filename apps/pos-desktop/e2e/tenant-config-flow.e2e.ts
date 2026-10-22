@@ -47,6 +47,12 @@ import {
   waitForTenantConfigValue,
   fetchServerConfigChangelog,
 } from "./server-state";
+import {
+  forceTenantConfigSync,
+  putServerTenantConfig,
+  readTenantConfigStore,
+  setConfigNumber,
+} from "./tenant-config-harness";
 import { fetchLocalConfig } from "./local-state";
 
 // `describe` / `it` / `beforeEach` are Mocha globals injected by the WDIO runner.
@@ -57,6 +63,44 @@ const OWNER: SuiteAccount = {
   password: "123456",
   displayName: "Dueña E2E",
 };
+
+/**
+ * ADMIN, for the write that must be refused.
+ *
+ * `PUT /tenant-config` admits MANAGER and OWNER, and ADMIN is only allowed
+ * to READ it — a rule the screen does not mark anywhere: the controls render
+ * editable and the refusal only shows up as the page's error banner.
+ */
+const ADMIN: SuiteAccount = {
+  identifier: "admin@pos-e2e.local",
+  password: "123456",
+  displayName: "Administradora Principal",
+};
+
+/**
+ * The configuration page's error banner.
+ *
+ * It is what the page shows when a save is refused, and it replaces the whole
+ * page — tab nav included — so a spec that triggers it has to sync before it
+ * can open the screen again.
+ */
+const CONFIG_ERROR_BANNER =
+  '//p[contains(., "Error al cargar la configuración")]';
+
+/**
+ * Write into the max-items field, tolerating the field disappearing.
+ *
+ * A refused write replaces the configuration page with its error banner, and
+ * the field goes with it — which is the outcome under test, not a failure of
+ * the write.
+ */
+async function trySetMaxItems(value: number): Promise<void> {
+  try {
+    await setConfigNumber("#maxItemsPerOrder", value);
+  } catch {
+    // The page replaced itself with the error banner. That IS the outcome.
+  }
+}
 
 /** Open the config page and wait for its shell. */
 async function openConfig(): Promise<void> {
@@ -310,5 +354,120 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
     // A computed default carries id "" and version 0; a persisted row never does.
     expect(config?.configVersion).toBeGreaterThan(0);
     expect(config?.lastModifiedById ?? "").not.toBe("");
+  });
+
+  it("E2E-T07: a configuration change made on the server reaches the POS on the next sync", async () => {
+    await signInAs(OWNER);
+
+    // Another admin changes the configuration on the server, behind the POS's
+    // back. The POS only learns about it on a sync cycle — its own tick is up
+    // to five minutes away.
+    const before = await fetchServerTenantConfig();
+    const original = Number(before?.purchases.maxItemsPerOrder ?? 0);
+
+    const write = await putServerTenantConfig(
+      {
+        purchases: { ...before?.purchases, maxItemsPerOrder: 7 },
+      },
+      OWNER,
+    );
+    expect(write.status).toBe(200);
+
+    const after = await fetchServerTenantConfig();
+    expect(after?.purchases.maxItemsPerOrder).toBe(7);
+    expect(after?.configVersion).toBeGreaterThan(before?.configVersion ?? 0);
+
+    // A sync cycle pulls the server's version into the POS.
+    await forceTenantConfigSync({ configVersion: after?.configVersion });
+
+    const store = await readTenantConfigStore();
+    expect(store.configVersion).toBe(after?.configVersion);
+    expect(
+      (store.config?.purchases as Record<string, unknown> | undefined)
+        ?.maxItemsPerOrder,
+    ).toBe(7);
+
+    // And the screen renders the new value, not the one it had.
+    await openConfig();
+    await openConfigTab("Compras");
+    await expectConfigSection("Configuración de órdenes");
+    expect(await (await $("#maxItemsPerOrder")).getValue()).toBe("7");
+
+    // Put back whatever the page had before, so this spec leaks nothing.
+    await setConfigNumber("#maxItemsPerOrder", original);
+    await waitForTenantConfigValue("purchases", "maxItemsPerOrder", original);
+  });
+
+  it("E2E-T08: a write against a stale version is refused and the page says so", async () => {
+    await signInAs(OWNER);
+    await openConfig();
+    await openConfigTab("Compras");
+    await expectConfigSection("Configuración de órdenes");
+
+    // Another admin writes first: the POS now holds a version the server has
+    // already moved past, and every write it makes from here carries that
+    // stale version.
+    const before = await fetchServerTenantConfig();
+    const write = await putServerTenantConfig(
+      {
+        purchases: { ...before?.purchases, maxItemsPerOrder: 9 },
+      },
+      OWNER,
+    );
+    expect(write.status).toBe(200);
+
+    await trySetMaxItems(11);
+
+    // The page reports the failure instead of pretending the value was saved.
+    // The banner says "Error al cargar la configuración" for what is really a
+    // save conflict, and it carries the raw HTTP error in English — both are
+    // in the guide's backlog, but the important part here is that the write
+    // was refused and the user is told.
+    await waitVisible(
+      CONFIG_ERROR_BANNER,
+      20,
+      1_000,
+      "configuration error banner",
+    );
+
+    // The server still holds the other admin's value: the stale write never
+    // landed.
+    const after = await fetchServerTenantConfig();
+    expect(after?.purchases.maxItemsPerOrder).toBe(9);
+    expect(after?.configVersion).toBe((before?.configVersion ?? 0) + 1);
+
+    // The error lives in the store, so the page stays broken until something
+    // clears it — which only a sync does. That is the cost of the current
+    // behaviour, and it is why the spec leaves the screen usable.
+    await forceTenantConfigSync();
+  });
+
+  it("E2E-T09: an ADMIN cannot write the tenant configuration", async () => {
+    await signInAs(ADMIN);
+    await openConfig();
+    await openConfigTab("Compras");
+    await expectConfigSection("Configuración de órdenes");
+
+    // The screen offers the control as editable: nothing in the UI marks it
+    // as read-only for this role.
+    const before = await fetchServerTenantConfig();
+    await trySetMaxItems(13);
+
+    await waitVisible(
+      CONFIG_ERROR_BANNER,
+      20,
+      1_000,
+      "configuration error banner",
+    );
+
+    // And the server refused it: nothing changed, not even the version.
+    const after = await fetchServerTenantConfig();
+    expect(after?.purchases.maxItemsPerOrder).toBe(
+      before?.purchases.maxItemsPerOrder,
+    );
+    expect(after?.configVersion).toBe(before?.configVersion);
+
+    // Clear the error so the specs that follow can open the screen again.
+    await forceTenantConfigSync();
   });
 });

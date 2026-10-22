@@ -251,12 +251,16 @@ describe("DeliveryConfigTab", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("shows only the max fee field in MANUAL mode", () => {
+    it("shows the reference fee and the max fee in MANUAL mode", () => {
       renderTab(tenantConfig(deliveryConfig({ deliveryFeeMode: "MANUAL" })));
 
+      // The reference fee is visible in MANUAL mode too: the cap is compared
+      // against it, and it is the only control that can set an amount BEFORE
+      // the FIXED mode is selected — which is what makes FIXED reachable at
+      // all (selecting it requires a fee greater than zero).
       expect(
-        screen.queryByRole("textbox", { name: "Tarifa fija" }),
-      ).not.toBeInTheDocument();
+        screen.getByRole("textbox", { name: "Tarifa fija" }),
+      ).toBeInTheDocument();
       expect(
         screen.getByRole("textbox", { name: "Tarifa máxima" }),
       ).toBeInTheDocument();

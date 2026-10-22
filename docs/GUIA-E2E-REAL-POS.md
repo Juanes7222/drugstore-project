@@ -13,10 +13,12 @@ mano. Era una segunda copia no verificada del contrato de la API: un cambio en
 la forma real de una respuesta dejaba el mock en verde mientras la aplicación
 se rompía. Compartir solo el cable HTTP es lo que hace que eso falle aquí.
 
-Estado actual: **13 specs / 53 tests** (`sales-flow`, `sales-pricing-flow`,
-`sales-config-flow`, `sales-credit-flow`, `returns-flow`, `purchases-flow`,
+Estado actual: **16 specs / 66 tests** (`sales-flow`, `sales-pricing-flow`,
+`sales-config-flow`, `sales-credit-flow`, `credit-payment-flow`,
+`server-rejection-flow`, `returns-flow`, `purchases-flow`,
 `inventory-products-flow`, `inventory-adjustments-flow`, `clients-flow`,
-`lot-expiry-flow`, `users-flow`, `tenant-config-flow`, `cash-shift-flow`).
+`lot-expiry-flow`, `users-flow`, `tenant-config-flow`, `tenant-delivery-flow`,
+`cash-shift-flow`).
 Cobertura pendiente: ver §10.
 
 ---
@@ -296,6 +298,37 @@ ajustar el assert**. Bugs encontrados y corregidos:
    quedaba registrado como `BUSINESS_RULE`. En la pantalla de salud de
    sincronización los dos casos se ven igual, y no lo son: uno es un error de
    captura y el otro una regla del negocio. Lo encontró `server-rejection-flow`.
+10. **El modo de tarifa fija de los domicilios era inalcanzable.** La
+    validación (en la pestaña y en el servidor) exige `fixedDeliveryFeeCents > 0`
+    para el modo `FIXED`, pero el único control que podía fijar ese valor
+    —el campo "Tarifa fija"— solo se renderizaba en modo `FIXED`. Ningún
+    tenant podía cobrar una tarifa fija de domicilio: el único camino era
+    poner el modo a mano por API. Ahora el campo de referencia también se
+    muestra en modo `MANUAL`, de modo que el importe se fija primero y el modo
+    se elige después. Lo encontró `tenant-delivery-flow` al intentar
+    configurar la política por la UI.
+11. **Un save de configuración rechazado deja la pantalla inservible.** El
+    error queda en el store y `TenantConfigPage` sustituye **toda** la página
+    —incluida la barra de pestañas— por el cartel de error. Y como el error
+    solo lo limpia un `setConfig` exitoso, la siguiente forma de limpiarlo es
+    el pull del sync: hasta 5 minutos con la pantalla rota, sin que el aviso
+    diga que fue un conflicto de versión (dice "Error al cargar la
+    configuración" y arrastra el error HTTP en inglés). Lo encontraron
+    `tenant-config-flow` (T08/T09), que por eso terminan forzando un sync:
+    sin él, el spec siguiente no puede ni abrir la pantalla.
+12. **Borrar un campo numérico de la configuración guarda 0 en el servidor.**
+    Los campos numéricos convierten el valor vacío en 0 y guardan en cada
+    pulsación (`purchases-config-tab.tsx:274`, `strictness.section.tsx:324`,
+    `delivery-config-tab.tsx:224`), así que seleccionar el contenido y
+    reescribirlo deja el servidor **sin límite** durante la ventana entre el
+    borrado y la escritura. Con `clientRequiredThreshold` es peor: el 0 se
+    rechaza en el servidor (el modo `ABOVE_AMOUNT` exige un umbral > 0), el
+    store local conserva el 0 y la pantalla muestra 0 mientras el servidor
+    sigue con el valor viejo — una divergencia silenciosa. Lo delató el ruido
+    de consola de los specs (dos `PUT` por cada campo), no un assert: los
+    specs escriben el valor de una vez (`setConfigNumber` en
+    `tenant-config-harness.ts`) para no dispararlo, así que **sigue sin
+    cobertura propia**.
 
 Al añadir un test, verifica también si el **mock** de un unit test existente
 sigue siendo válido: si tu fix cambia la llamada que el código hace, el mock es
@@ -313,6 +346,8 @@ cubrir; esto es lo que más valor da):
 |---|---|---|
 | ✅ | **Turno de caja**: apertura, arqueo, cierre | `cash-shift-flow` (SH01–SH02): el turno que abre la app llega al servidor con el MISMO id y la venta queda colgada de él; el cierre desde la UI cierra el turno del servidor con el efectivo contado |
 | ✅ | **Crédito de cliente**: pago y anulación | `credit-payment-flow` (CP01–CP02): el abono se escribe en local, se replayea al servidor (`CLIENT_CREDIT_PAYMENT`), y la DEUDA baja exactamente lo mismo en las dos bases; la anulación (`CLIENT_CREDIT_PAYMENT_ANNULMENT`) devuelve la deuda a su valor previo en ambas |
+| ✅ | **Política de domicilios del tenant** | `tenant-delivery-flow` (DV01–DV07): `workflow.delivery` es el único bloque de la configuración que el POS **aplica** en runtime (`SalesPosService.validateDeliveryAgainstPolicy`). Los specs escriben la política desde Configuración → Domicilios y comprueban que el carrito ofrece el domicilio solo con la política activa, que cada requisito (cliente, dirección, teléfono, tope de tarifa) frena al cajero, que una venta válida guarda el domicilio (dirección y tarifa) en las dos bases, y que una política endurecida **por debajo** de una venta ya construida la hace rechazar **por el servicio** sin escribir nada |
+| ✅ | **Propagación de la configuración al POS** | `tenant-config-flow` (T07): un cambio hecho en el servidor llega al POS en el siguiente ciclo de sync, no antes. El spec usa `tenant-config-harness.ts`, que escribe por API (con su propia sesión: el POS guarda el token en memoria y no se puede prestado) y fuerza el ciclo con el botón "Sincronizar ahora" de Salud de Sinc. |
 | ✅ | **Negativa del servidor** | `server-rejection-flow` (N01): cuando el SERVIDOR rechaza lo que el POS aceptó (el formulario admite más códigos de barras de los que el esquema del servidor acepta), la cola local queda `PERMANENT_FAILURE`, con la categoría `VALIDATION` y el motivo DEL SERVIDOR, y el servidor NO crea el producto |
 | 1 | **Compras**: devolución a proveedor | El replay de devolución a proveedor tuvo un bug de stock (§9, similar al #7); orden y recepción ya están cubiertos (`purchases-flow`) |
 | 2 | **Inventario**: FEFO y venta que consume varios lotes | El ajuste por conteo está cubierto (`inventory-adjustments-flow`) |
@@ -320,6 +355,8 @@ cubrir; esto es lo que más valor da):
 | 4 | **Farmacia**: recetas y controlados | La venta de un producto controlado se rechaza en local (`PrescriptionRequiredNotSupportedException`), así que la vertical de recetas es inalcanzable |
 | 5 | **Impresión**: recibo y nota crédito | El `PrintRouter` no está conectado al WebView todavía |
 | 6 | **Caída de red**: cortar y reconectar a mitad de venta | El motor de reintentos merece E2E |
+| 7 | **Configuración del tenant que no se aplica** | `strictness.cashShiftRequired`, `workflow.requireShiftOpenForSale`, `strictness.returnsRequireOriginalSale`, `strictness.clientRequiredThreshold` (el hook pasa `0` como total, así que `ABOVE_AMOUNT` nunca se activa), `workflow.autoPrintOnConfirm`, `sessionIdleTimeout*`, `prescriptionExpiryDays`… se configuran, se guardan y **no se leen en ningún sitio**. Antes de escribir el test hay que decidir si el comportamiento esperado es "se aplica" o "el control no debería existir" |
+| 8 | **Concurrencia y RBAC de la configuración** | **Parcialmente cubierto.** `PUT /tenant-config` manda `expectedConfigVersion`: dos ediciones seguidas se pisan y la segunda recibe 409 (T08 lo comprueba: el servidor conserva el valor del otro admin y la pantalla avisa). ADMIN recibe 403 en toda escritura (T09) y la UI no marca nada como solo lectura. Falta: el rol **MANAGER** —que sí puede cambiar `workflow` y `purchases` pero no `strictness` ni `fiscal`— porque no hay fixture con ese rol (habría que crearlo con credenciales), y falta el mensaje de conflicto en condiciones: hoy es el cartel genérico de carga fallida con un error HTTP en inglés (ver §9.11) |
 
 Al añadir un flujo nuevo, el checklist es:
 
@@ -365,7 +402,9 @@ y solo aparece en la segunda corrida.
 | `e2e/clients-flow.e2e.ts` | C01–C04 (alta, edición, desactivación) |
 | `e2e/lot-expiry-flow.e2e.ts` | X01–X03 (lotes por vencer, vencidos, gating por config) |
 | `e2e/users-flow.e2e.ts` | U01–U03 (alta, PIN, estado) |
-| `e2e/tenant-config-flow.e2e.ts` | T01–T06 (configuración por tenant) |
+| `e2e/tenant-config-flow.e2e.ts` | T01–T06 (configuración por tenant) y T07–T09 (propagación servidor → POS, conflicto de versión, RBAC de ADMIN) |
+| `e2e/tenant-delivery-flow.e2e.ts` | DV01–DV07 (política de domicilios: la única parte de la config que el POS aplica) |
+| `e2e/tenant-config-harness.ts` | **harness**: escribir la config por API y forzar el sync, para llegar a los estados que la pantalla no sabe expresar |
 | `e2e/cash-shift-flow.e2e.ts` | SH01–SH02 (turno: apertura, arqueo, cierre) |
 | `apps/server/test/pos-e2e/baseline.ts` | fixture del mundo + ids compartidos |
 | `apps/server/test/pos-e2e/reset.ts` | TRUNCATE + siembra |

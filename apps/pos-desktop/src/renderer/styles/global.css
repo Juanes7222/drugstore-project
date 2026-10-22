@@ -343,6 +343,16 @@
     }
   }
 
+  .pos-button-danger {
+    background-color: var(--color-error);
+    color: #fff;
+
+    &:hover:not(:disabled) {
+      filter: brightness(1.05);
+      box-shadow: var(--shadow-pos-elevated);
+    }
+  }
+
   .pos-button-restrict {
     background-color: var(--color-restrict);
     color: var(--color-panel);

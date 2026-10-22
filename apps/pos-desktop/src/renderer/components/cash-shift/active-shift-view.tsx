@@ -1,5 +1,5 @@
 /**
- * Active shift view — shows the store-wide shift metadata (opened by,
+ * Active shift view - shows the store-wide shift metadata (opened by,
  * opened-at, opening balance, state) and, for admin-level sessions, a
  * "Cerrar turno" button that triggers the close wizard. Non-admin sessions
  * get the same information read-only with a note that an admin manages
@@ -46,7 +46,7 @@ export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
       })}
     >
       <div className="flex flex-col gap-pos-lg">
-        {/* Store-wide scope hint — the shift is shared by every workstation */}
+        {/* Store-wide scope hint - the shift is shared by every workstation */}
         <p className="text-caption" style={{ color: 'var(--color-ink-muted)' }}>
           {t('cash_shift.store_wide_hint')}
         </p>
@@ -108,8 +108,8 @@ export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
               className="inline-flex items-center gap-1 rounded-full px-pos-sm py-0.5 font-data text-caption font-medium"
               style={{
                 backgroundColor:
-                  'color-mix(in srgb, var(--color-verified) 15%, transparent)',
-                color: 'var(--color-verified)',
+                  'color-mix(in srgb, var(--color-pharma) 15%, transparent)',
+                color: 'var(--color-pharma)',
               }}
             >
               {t('cash_shift.state_open')}
@@ -129,7 +129,7 @@ export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
         )}
 
         {canClose ? (
-          /* Close shift button — admin-level only */
+          /* Close shift button -    admin-level only */
           <div
             className="flex justify-end border-t pt-pos-lg"
             style={{

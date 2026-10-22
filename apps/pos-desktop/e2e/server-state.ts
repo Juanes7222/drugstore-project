@@ -1654,6 +1654,73 @@ export async function waitForTenantConfigValue(
   );
 }
 
+/** The tenant's delivery (domicilio) policy, as stored on the server. */
+export type ServerDeliveryPolicy = Record<string, unknown>;
+
+/**
+ * The tenant's delivery (domicilio) policy as stored on the server.
+ *
+ * `workflow.delivery` is a nested object, so `waitForTenantConfigValue`'s
+ * scalar comparison cannot be used on it.
+ */
+export async function fetchServerDeliveryPolicy(): Promise<ServerDeliveryPolicy | null> {
+  const config = await fetchServerTenantConfig();
+  const delivery = config?.workflow.delivery;
+  if (!delivery || typeof delivery !== "object" || Array.isArray(delivery)) {
+    return null;
+  }
+  return delivery as Record<string, unknown>;
+}
+
+/**
+ * Wait until the stored delivery policy carries every value in `patch`.
+ *
+ * The patch is matched key by key, so a spec can wait for one control
+ * ("the fee mode is FIXED") without having to spell out the whole policy.
+ */
+export async function waitForTenantConfigDelivery(
+  patch: Record<string, unknown>,
+  timeoutMs = 60_000,
+): Promise<ServerDeliveryPolicy> {
+  const deadline = Date.now() + timeoutMs;
+  let last: ServerDeliveryPolicy | null = null;
+
+  while (Date.now() < deadline) {
+    const delivery = await fetchServerDeliveryPolicy();
+    if (delivery) {
+      last = delivery;
+      const matches = Object.entries(patch).every(
+        ([key, value]) => delivery[key] === value,
+      );
+      if (matches) return delivery;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `tenant config workflow.delivery never reached ${JSON.stringify(patch)} ` +
+      `within ${timeoutMs}ms (last: ${JSON.stringify(last)})`,
+  );
+}
+
+/**
+ * The delivery (domicilio) payload stored on a sale, on the server side.
+ *
+ * Null when the sale is not a domicilio — the column is null in that case.
+ */
+export async function fetchServerSaleDelivery(
+  localNumber: number,
+): Promise<Record<string, unknown> | null> {
+  const rows = await query<{ delivery: unknown }>(
+    `SELECT delivery FROM "Sale"
+      WHERE "sourceWorkstationId" = $1 AND "localNumber" = $2`,
+    [WORKSTATION_ID, localNumber],
+  );
+  const value = rows[0]?.delivery;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 function fetchServerSourceProductIdNames(
   sourceProductId: string | undefined,
 ): Promise<string[]> {

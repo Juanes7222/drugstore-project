@@ -582,6 +582,13 @@ async function buildTauriOverride(station, port) {
       windows: [
         {
           label: 'main',
+          // The CLI merges this file over tauri.conf.json with RFC 7396
+          // merge-patch, which REPLACES the whole windows array — so
+          // "create": false from the base config is lost unless it is
+          // repeated here. Without it Tauri auto-creates the "main"
+          // window and the setup hook panics with "a webview with label
+          // `main` already exists".
+          create: false,
           title: `Pharmacy POS — ${station.name}`,
           width: 1440,
           height: 900,

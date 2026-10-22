@@ -463,6 +463,24 @@ export async function fetchLocalSaleDetail(
   };
 }
 
+/**
+ * The delivery (domicilio) payload the POS stored on a sale.
+ *
+ * Null when the sale is not a domicilio. The column is a JSON blob, so the
+ * shape is whatever the POS wrote — the spec asserts on it field by field.
+ */
+export async function fetchLocalSaleDelivery(
+  localNumber: number,
+): Promise<Record<string, unknown> | null> {
+  const rows = await queryLocal<{ delivery: unknown }>(
+    `SELECT delivery FROM "Sale" WHERE "localNumber" = $1`,
+    [String(localNumber)],
+  );
+  const value = rows[0]?.delivery;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 // ---------------------------------------------------------------------------
 // Cash shift
 // ---------------------------------------------------------------------------

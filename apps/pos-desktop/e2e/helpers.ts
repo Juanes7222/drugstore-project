@@ -2054,7 +2054,13 @@ export async function switchUser(
   password: string,
 ): Promise<void> {
   await waitVisible(QUICK_SWITCH, 20, 1_000, "QuickSwitch trigger");
-  await (await $(QUICK_SWITCH)).click();
+  const trigger = await $(QUICK_SWITCH);
+  // The trigger lives in the top bar, which scrolls away with the page
+  // content: clicking it unscrolled failed with "element not interactable"
+  // (and "move target out of bounds" on the scroll attempt). Centring it
+  // first is what every other click in this file does.
+  await trigger.scrollIntoView({ block: "center", inline: "center" });
+  await trigger.click();
 
   const entry = `//div[contains(@class,"pos-panel")]//button[.//span[normalize-space(.)="${displayName}"]]`;
   await waitVisible(entry, 20, 1_000, `QuickSwitch entry for ${displayName}`);

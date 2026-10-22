@@ -428,19 +428,32 @@ export const DeliveryConfigTab: FC<DeliveryConfigTabProps> = ({
                   </fieldset>
                 </div>
 
-                {delivery?.deliveryFeeMode === "FIXED" && (
+                {/*
+                  The fixed fee is the REFERENCE amount: it is what the FIXED
+                  mode charges, and the MANUAL cap cannot be lower than it. It
+                  used to render only while the mode was FIXED, which made that
+                  mode unreachable: selecting FIXED requires a fee greater than
+                  zero (the validation refuses anything else, on both sides),
+                  and the only control able to set one lived in FIXED mode. So
+                  it is visible in MANUAL mode too — the fee is set there and
+                  the mode selected afterwards.
+                */}
+                {(delivery?.deliveryFeeMode === "FIXED" ||
+                  delivery?.deliveryFeeMode === "MANUAL") && (
                   <MoneyField
                     id="delivery-fixed-fee"
                     label={t("config.delivery.fixedFee")}
                     hint={t("config.delivery.fixedFeeHint")}
-                    valueCents={delivery.fixedDeliveryFeeCents}
+                    valueCents={delivery?.fixedDeliveryFeeCents ?? 0}
                     disabled={disabled}
                     error={
                       feeErrors.fixedDeliveryFeeCents !== undefined
                         ? t(feeErrors.fixedDeliveryFeeCents)
                         : undefined
                     }
-                    onChange={(cents) => updateDeliveryField("fixedDeliveryFeeCents", cents)}
+                    onChange={(cents) =>
+                      updateDeliveryField("fixedDeliveryFeeCents", cents)
+                    }
                   />
                 )}
                 {delivery?.deliveryFeeMode === "MANUAL" && (

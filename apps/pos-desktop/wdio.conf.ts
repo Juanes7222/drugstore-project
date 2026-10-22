@@ -172,6 +172,10 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
    *     closes the shift, and a shift left closed would leave every later spec
    *     without one. It also needs the shift the sales specs opened, so it
    *     cannot run first either.
+   *   - `tenant-delivery-flow` writes the tenant's delivery policy and sells
+   *     with it, so it needs the open shift the sales specs left and it must
+   *     run before `cash-shift-flow` closes it. It restores the policy to
+   *     "no domicile at all" when it finishes.
    */
   specs: [
     "./e2e/sales-flow.e2e.ts",
@@ -188,6 +192,7 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
     "./e2e/lot-expiry-flow.e2e.ts",
     "./e2e/users-flow.e2e.ts",
     "./e2e/tenant-config-flow.e2e.ts",
+    "./e2e/tenant-delivery-flow.e2e.ts",
     "./e2e/cash-shift-flow.e2e.ts",
   ],
 
